@@ -1,0 +1,18 @@
+# このファイルを .dev.vars にコピーし、値を設定してください。
+# `pnpm pages:dev`（wrangler pages dev）がローカル開発時に読み込みます。
+# 本番環境には `pnpm wrangler pages secret put GITHUB_PAT` で設定します。
+
+# GitHub Classic PAT（scope: repo + project）。ブラウザには一切公開されません。
+GITHUB_PAT=ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+# Gemini API key（LLM 整形用）。ブラウザには一切公開されません。
+# 本番環境には `pnpm wrangler pages secret put GEMINI_API_KEY` で設定します。
+GEMINI_API_KEY=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+# GitHub ProjectV2 連携（起票した Issue を Project に追加 + Status=draft 設定）。
+# 3 つすべて設定すると有効化され、未設定の場合は連携をスキップします（起票自体は成功）。
+# node ID は `gh api graphql` 等で取得できます。ブラウザには一切公開されません。
+# 本番環境には `pnpm wrangler pages secret put PROJECT_ID` 等で各 secret を設定します。
+PROJECT_ID=PVT_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+STATUS_FIELD_ID=PVTSSF_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+STATUS_OPTION_ID=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
