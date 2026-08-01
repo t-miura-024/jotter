@@ -1,0 +1,18 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+*.tsbuildinfo
+
+# Local env / secrets（secret を平文で持つため絶対にコミットしない）
+.dev.vars
+
+# Wrangler
+.wrangler/
+
+# Temporary work files
+tmp/
+
+# OS / editor
+.DS_Store
