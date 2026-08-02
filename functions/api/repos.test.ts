@@ -33,7 +33,7 @@ describe("GET /api/repos", () => {
     });
   });
 
-  it("t-miura-024 配下リポジトリ一覧を返す（archived 除外）", async () => {
+  it("t-miura-024 配下リポジトリ一覧を返す（archived 除外・private 含む）", async () => {
     const fetchMock = vi.fn<typeof fetch>(async () =>
       jsonResponse([
         {
@@ -41,18 +41,28 @@ describe("GET /api/repos", () => {
           full_name: "t-miura-024/tools",
           owner: { login: "t-miura-024" },
           archived: false,
+          private: false,
         },
         {
           name: "note",
           full_name: "t-miura-024/note",
           owner: { login: "t-miura-024" },
           archived: false,
+          private: true,
         },
         {
           name: "old-project",
           full_name: "t-miura-024/old-project",
           owner: { login: "t-miura-024" },
           archived: true,
+          private: false,
+        },
+        {
+          name: "other-repo",
+          full_name: "someone/other-repo",
+          owner: { login: "someone" },
+          archived: false,
+          private: false,
         },
       ]),
     );
@@ -68,8 +78,7 @@ describe("GET /api/repos", () => {
       ],
     });
 
-    // t-miura-024 の repos API を呼び出している
-    expect(String(fetchMock.mock.calls[0][0])).toContain("/users/t-miura-024/repos");
+    expect(String(fetchMock.mock.calls[0][0])).toContain("/user/repos");
   });
 
   it("GitHub API が失敗したら 502 を返す", async () => {

@@ -8,6 +8,7 @@ type GitHubRepo = {
   full_name: string;
   owner: { login: string };
   archived: boolean;
+  private: boolean;
 };
 
 const json = (data: unknown, status = 200): Response =>
@@ -19,6 +20,7 @@ const json = (data: unknown, status = 200): Response =>
 /**
  * GET /api/repos — INTERNAL_OWNER（t-miura-024）配下リポジトリ一覧を返す。
  *
+ * 認証ユーザーの /user/repos を使い、private リポジトリも含めて取得する。
  * archived リポジトリは除外する。secret はサーバー側（env）に留め、ブラウザには出さない。
  */
 export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
@@ -29,7 +31,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
   try {
     const client = new GitHubClient({ token: env.GITHUB_PAT });
     const response = await client.request(
-      `/users/${INTERNAL_OWNER}/repos?per_page=100&sort=full_name&direction=asc`,
+      "/user/repos?per_page=100&sort=full_name&direction=asc&type=owner",
     );
     if (!response.ok) {
       throw await toGitHubError(response, "リポジトリ一覧の取得に失敗しました");
@@ -38,7 +40,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
     const repos = (await response.json()) as GitHubRepo[];
     return json({
       repos: repos
-        .filter((repo) => !repo.archived)
+        .filter((repo) => !repo.archived && repo.owner.login === INTERNAL_OWNER)
         .map((repo) => ({
           owner: repo.owner.login,
           name: repo.name,
