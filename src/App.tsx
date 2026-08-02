@@ -1,71 +1,86 @@
 import { useState } from "react";
 
-import {
-  CircleAlert,
-  CircleCheck,
-  ExternalLink,
-  LoaderCircle,
-  PenLine,
-  RotateCcw,
-  Send,
-  TriangleAlert,
-} from "lucide-react";
+import { CircleAlert, LoaderCircle, PenLine, RotateCcw, Send } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 
 import { DEFAULT_MODEL, ModelSelector } from "@/components/model-selector";
 import { RepoSelector } from "@/components/repo-selector";
+import { ResultDialog, type SubmitResult } from "@/components/result-dialog";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 
-type SubmitResult = {
-  number: number;
-  title: string;
-  url: string;
-  repo: string;
-  /** 実際に整形に応答した Gemini モデル名。 */
-  modelUsed: string;
-  /** 優先モデル以外へフォールバックしたか。 */
-  fallbackOccurred: boolean;
-  /** 起票後に GitHub Project へ追加されたか（secret 未設定・連携失敗時は false）。 */
-  projectAdded: boolean;
-};
+type SubmitStage = "formatting" | "creating";
 
 type SubmitState =
   | { status: "idle" }
-  | { status: "submitting" }
+  | { status: "submitting"; stage: SubmitStage }
   | { status: "success"; result: SubmitResult }
   | { status: "error"; message: string };
 
+const STAGE_LABEL: Record<SubmitStage, string> = {
+  formatting: "LLM が整形中…",
+  creating: "Issue を作成中…",
+};
+
 const MotionButton = motion.create(Button);
+
+function parseSseEvents(text: string): Array<{ event: string; data: Record<string, unknown> }> {
+  const events: Array<{ event: string; data: Record<string, unknown> }> = [];
+  for (const block of text.split("\n\n").filter(Boolean)) {
+    const eventMatch = block.match(/^event: (.+)$/m);
+    const dataMatch = block.match(/^data: (.+)$/m);
+    if (eventMatch && dataMatch) {
+      events.push({ event: eventMatch[1], data: JSON.parse(dataMatch[1]) });
+    }
+  }
+  return events;
+}
 
 export default function App() {
   const [jot, setJot] = useState("");
   const [repo, setRepo] = useState("");
   const [preferredModel, setPreferredModel] = useState<string>(DEFAULT_MODEL);
   const [state, setState] = useState<SubmitState>({ status: "idle" });
+  const [dialogOpen, setDialogOpen] = useState(false);
 
   const submitting = state.status === "submitting";
   const canSubmit = jot.trim().length > 0 && !submitting;
 
   async function submit(): Promise<void> {
     if (!canSubmit) return;
-    setState({ status: "submitting" });
+    setState({ status: "submitting", stage: "formatting" });
     try {
       const response = await fetch("/api/submit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ jot, repo, preferredModel }),
       });
+
       if (!response.ok) {
         const body = (await response.json().catch(() => null)) as {
           error?: string;
         } | null;
         throw new Error(body?.error ?? `HTTP ${response.status}`);
       }
-      const result = (await response.json()) as SubmitResult;
-      setJot("");
-      setState({ status: "success", result });
+
+      const text = await response.text();
+      const events = parseSseEvents(text);
+
+      for (const event of events) {
+        if (event.event === "formatting") {
+          setState({ status: "submitting", stage: "formatting" });
+        } else if (event.event === "creating") {
+          setState({ status: "submitting", stage: "creating" });
+        } else if (event.event === "done") {
+          const result = event.data as unknown as SubmitResult;
+          setJot("");
+          setState({ status: "success", result });
+          setDialogOpen(true);
+        } else if (event.event === "error") {
+          throw new Error(String(event.data.error ?? "不明なエラー"));
+        }
+      }
     } catch (error) {
       setState({
         status: "error",
@@ -132,53 +147,13 @@ export default function App() {
           ) : (
             <Send aria-hidden />
           )}
-          {submitting ? "起票中…" : "起票"}
+          {submitting && state.status === "submitting"
+            ? STAGE_LABEL[state.stage]
+            : "起票"}
         </MotionButton>
       </div>
 
       <AnimatePresence mode="wait">
-        {state.status === "success" && (
-          <motion.div
-            key="success"
-            role="status"
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -4 }}
-            transition={{ duration: 0.25, ease: "easeOut" }}
-            className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-3"
-          >
-            <p className="flex items-center gap-2 text-sm font-medium">
-              <CircleCheck aria-hidden className="size-4 shrink-0 text-primary" />
-              draft Issue として起票しました。
-            </p>
-            <a
-              href={state.result.url}
-              target="_blank"
-              rel="noreferrer"
-              className="mt-1.5 flex items-start gap-1.5 text-primary underline-offset-4 hover:underline"
-            >
-              <span className="font-mono text-xs leading-5 break-all">{state.result.url}</span>
-              <ExternalLink aria-hidden className="mt-0.5 size-3.5 shrink-0" />
-            </a>
-            {(state.result.fallbackOccurred || !state.result.projectAdded) && (
-              <div className="mt-2.5 flex flex-col gap-1.5 border-t border-border/60 pt-2 text-xs text-muted-foreground">
-                {state.result.fallbackOccurred && (
-                  <p className="flex items-center gap-1.5">
-                    <TriangleAlert aria-hidden className="size-3.5 shrink-0" />
-                    フォールバック発生: <span className="font-mono">{state.result.modelUsed}</span>{" "}
-                    を使用しました。
-                  </p>
-                )}
-                {!state.result.projectAdded && (
-                  <p className="flex items-center gap-1.5">
-                    <TriangleAlert aria-hidden className="size-3.5 shrink-0" />
-                    Project 連携をスキップしました（secret 未設定または連携失敗）。起票は成功しています。
-                  </p>
-                )}
-              </div>
-            )}
-          </motion.div>
-        )}
         {state.status === "error" && (
           <motion.div
             key="error"
@@ -210,6 +185,12 @@ export default function App() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      <ResultDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        result={state.status === "success" ? state.result : null}
+      />
     </main>
   );
 }
