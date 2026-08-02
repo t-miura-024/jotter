@@ -65,12 +65,12 @@ pnpm pages:deploy   # または Cloudflare Pages の Git 連携
 
 このアプリは Cloudflare Access 経由でのみアクセス可能にします（コードでは設定できないため手動手順）。
 
-1. [Cloudflare Zero Trust](https://one.dash.cloudflare.com/) → **Access** → **Applications** → **Add an application**
-2. Application type: **Self-hosted**
+1. [Cloudflare ダッシュボード](https://dash.cloudflare.com/) → **Zero Trust** → **Access controls** → **Applications** → **Create new application**
+2. **Self-hosted and private** → **Add public hostname**
 3. Application domain: Pages プロジェクトのドメイン（例: `jotter.pages.dev`）を指定。
    `/api/*` を含むドメイン全体に Access がかかります。
 4. Identity provider の追加: **Google**
-   （未設定の場合は Access → Settings → Authentication → Login methods で Google OAuth クライアントを先に登録）
+   （未設定の場合は Zero Trust → **Integrations** → **Identity providers** → **Add new identity provider** → Google で OAuth クライアントを先に登録）
 5. Access policy を 1 件追加:
    - Action: **Allow**
    - Include rules → Selector: **Emails** → 本人の Gmail アドレスのみ指定
