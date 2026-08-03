@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { GitHubClient, GitHubError } from "./client";
-import { addIssueToProject } from "./project";
+import { addIssueToProject, listProjectIssueStatuses } from "./project";
 
 const CONFIG = {
   projectId: "PVT_project",
@@ -125,6 +125,77 @@ describe("addIssueToProject", () => {
     const client = new GitHubClient({ token: "test-token", fetch: fetchMock });
 
     await expect(addIssueToProject(client, CONFIG, ISSUE)).rejects.toThrow(GitHubError);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("listProjectIssueStatuses", () => {
+  const projectItem = (
+    number: number,
+    repoFullName: string,
+    status: string | null,
+  ): Record<string, unknown> => ({
+    content: { number, repository: { nameWithOwner: repoFullName } },
+    fieldValueByName: status === null ? null : { name: status },
+  });
+
+  const itemsPage = (
+    nodes: unknown[],
+    pageInfo: { hasNextPage: boolean; endCursor: string | null },
+  ): Response => graphqlOk({ node: { items: { pageInfo, nodes } } });
+
+  it("hasNextPage が true の間は endCursor でページネーションして全件取得する", async () => {
+    const fetchMock = vi.fn<typeof fetch>();
+    fetchMock.mockResolvedValueOnce(
+      itemsPage([projectItem(1, "t-miura-024/tools", "draft")], {
+        hasNextPage: true,
+        endCursor: "cursor1",
+      }),
+    );
+    fetchMock.mockResolvedValueOnce(
+      itemsPage([projectItem(2, "t-miura-024/tools", "done")], {
+        hasNextPage: false,
+        endCursor: null,
+      }),
+    );
+    const client = new GitHubClient({ token: "test-token", fetch: fetchMock });
+
+    const statuses = await listProjectIssueStatuses(client, "PVT_project");
+
+    expect(statuses).toEqual([
+      { number: 1, repoFullName: "t-miura-024/tools", status: "draft" },
+      { number: 2, repoFullName: "t-miura-024/tools", status: "done" },
+    ]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    // 1 回目はカーソルなし、2 回目は 1 回目の endCursor を after に渡す
+    const first = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
+    expect(first.variables).toEqual({ projectId: "PVT_project", after: null });
+    const second = JSON.parse(String(fetchMock.mock.calls[1][1]?.body));
+    expect(second.variables).toEqual({ projectId: "PVT_project", after: "cursor1" });
+  });
+
+  it("単一ページ（hasNextPage: false）なら 1 リクエストで終える", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () =>
+      itemsPage([projectItem(1, "t-miura-024/tools", "refined")], {
+        hasNextPage: false,
+        endCursor: "cursor1",
+      }),
+    );
+    const client = new GitHubClient({ token: "test-token", fetch: fetchMock });
+
+    const statuses = await listProjectIssueStatuses(client, "PVT_project");
+
+    expect(statuses).toEqual([{ number: 1, repoFullName: "t-miura-024/tools", status: "refined" }]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("node が null（Project 未存在等）なら空配列を返す", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => graphqlOk({ node: null }));
+    const client = new GitHubClient({ token: "test-token", fetch: fetchMock });
+
+    const statuses = await listProjectIssueStatuses(client, "PVT_missing");
+
+    expect(statuses).toEqual([]);
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
