@@ -23,3 +23,11 @@ _Avoid_: inbox
 **external label**:
 note inbox に起票された Issue の由来を示す label。`external/{owner}-{name}`（外部 repo 指定）または `external/others`（repo 未指定）。
 _Avoid_: source label
+
+**plan list**:
+メイン画面。選択された repo のアクティブな計画 Issue を GitHub Project の Status 別にグルーピングして表示する。
+_Avoid_: dashboard, board
+
+**unregistered**:
+`kind/plan` label を持ち open だが、GitHub Project に登録されていない計画 Issue のグループ。起票時の Project 連携は best-effort のため存在しうる。
+_Avoid_: unknown, others

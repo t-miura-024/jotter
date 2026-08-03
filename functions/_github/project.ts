@@ -29,6 +29,7 @@ type GraphQLEnvelope<T> = {
 /**
  * GraphQL エンドポイントへ POST し、envelope を展開する。
  * 認証ヘッダは GitHubClient.request（REST と同じ Classic PAT）を再利用する（ADR 0002）。
+ * 同ファイル内の addIssueToProject / listProjectIssueStatuses 専用（API 面を最小化）。
  */
 async function graphql<T>(
   client: GitHubClient,
@@ -155,4 +156,75 @@ export async function addIssueToProject(
     },
     "Status の設定に失敗しました",
   );
+}
+
+/** Project item のうち Issue であるものの参照と Status フィールド値（計画一覧の join 用）。 */
+export type ProjectIssueStatus = {
+  /** Issue 番号。 */
+  number: number;
+  /** Issue が属する repo のフルネーム（owner/name）。 */
+  repoFullName: string;
+  /** Status フィールドの単一選択値の名前（未設定なら null）。 */
+  status: string | null;
+};
+
+/**
+ * Project の items を列挙し、Issue 内容と Status フィールド値を取り出す。
+ * Status はフィールド名 "Status" で引く（Project「plans」の固定フィールド）。
+ * ページネーションは実装しない（先頭 100 件、個人ツール規模）。
+ * 失敗時は GitHubError を投げる。失敗を許容するかどうかは呼び出し側が決める。
+ */
+const PROJECT_ITEMS_QUERY = `
+  query ($projectId: ID!) {
+    node(id: $projectId) {
+      ... on ProjectV2 {
+        items(first: 100) {
+          nodes {
+            content {
+              ... on Issue {
+                number
+                repository {
+                  nameWithOwner
+                }
+              }
+            }
+            fieldValueByName(name: "Status") {
+              ... on ProjectV2ItemFieldSingleSelectValue {
+                name
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+`;
+
+export async function listProjectIssueStatuses(
+  client: GitHubClient,
+  projectId: string,
+): Promise<ProjectIssueStatus[]> {
+  const data = await graphql<{
+    node: {
+      items?: {
+        nodes: Array<{
+          content: { number: number; repository: { nameWithOwner: string } } | null;
+          fieldValueByName: { name: string } | null;
+        }>;
+      };
+    } | null;
+  }>(client, PROJECT_ITEMS_QUERY, { projectId }, "Project items の取得に失敗しました");
+
+  const nodes = data.node?.items?.nodes ?? [];
+  return nodes.flatMap((node) => {
+    // content が Issue 以外（PR 等）の item は対象外。
+    if (!node.content) return [];
+    return [
+      {
+        number: node.content.number,
+        repoFullName: node.content.repository.nameWithOwner,
+        status: node.fieldValueByName?.name ?? null,
+      },
+    ];
+  });
 }

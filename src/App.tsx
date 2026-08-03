@@ -1,96 +1,143 @@
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
-import { CircleAlert, LoaderCircle, PenLine, RotateCcw, Send } from "lucide-react";
-import { AnimatePresence, motion } from "motion/react";
+import { CircleAlert, LoaderCircle, PenLine, RefreshCw, RotateCcw } from "lucide-react";
+import { motion } from "motion/react";
 
-import { DEFAULT_MODEL, ModelSelector } from "@/components/model-selector";
-import { RepoSelector } from "@/components/repo-selector";
+import { JotDialog } from "@/components/jot-dialog";
+import { PlanDetailDialog } from "@/components/plan-detail-dialog";
+import { PlanList } from "@/components/plan-list";
+import { REPO_OTHER_VALUE, RepoSelector } from "@/components/repo-selector";
 import { ResultDialog, type SubmitResult } from "@/components/result-dialog";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
+import {
+  fetchPlans,
+  getCachedPlans,
+  invalidatePlansCache,
+  type PlanItem,
+} from "@/lib/plans";
 
-type SubmitStage = "formatting" | "creating";
-
-type SubmitState =
-  | { status: "idle" }
-  | { status: "submitting"; stage: SubmitStage }
-  | { status: "success"; result: SubmitResult }
+type PlansState =
+  | { status: "loading" }
+  | { status: "ready"; plans: PlanItem[] }
   | { status: "error"; message: string };
 
-const STAGE_LABEL: Record<SubmitStage, string> = {
-  formatting: "LLM が整形中…",
-  creating: "Issue を作成中…",
+/** repo 選択の localStorage キー（キー名は AI 判断範囲で決定）。 */
+const REPO_STORAGE_KEY = "jotter-repo-selection";
+
+/** 「その他（自由入力）」モードの一覧読み込み debounce 時間（ms）。キーストローク毎の fetch を防ぐ。 */
+const OTHER_REPO_DEBOUNCE_MS = 300;
+
+/**
+ * 上部プルダウンの選択状態。
+ * selection: ""（指定しない）| "owner/name" | REPO_OTHER_VALUE（その他）。
+ */
+type RepoSelection = {
+  selection: string;
+  otherRepo: string;
 };
+
+/** 初回訪問（未保存・破損）は「指定しない（note inbox へ）」を選択する。 */
+function readStoredRepoSelection(): RepoSelection {
+  try {
+    const raw = localStorage.getItem(REPO_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as Partial<RepoSelection>;
+      if (typeof parsed.selection === "string" && typeof parsed.otherRepo === "string") {
+        return { selection: parsed.selection, otherRepo: parsed.otherRepo };
+      }
+    }
+  } catch {
+    // localStorage 利用不可（プライベートモード等）は既定選択にフォールバック。
+  }
+  return { selection: "", otherRepo: "" };
+}
 
 const MotionButton = motion.create(Button);
 
-function parseSseEvents(text: string): Array<{ event: string; data: Record<string, unknown> }> {
-  const events: Array<{ event: string; data: Record<string, unknown> }> = [];
-  for (const block of text.split("\n\n").filter(Boolean)) {
-    const eventMatch = block.match(/^event: (.+)$/m);
-    const dataMatch = block.match(/^data: (.+)$/m);
-    if (eventMatch && dataMatch) {
-      events.push({ event: eventMatch[1], data: JSON.parse(dataMatch[1]) });
-    }
-  }
-  return events;
-}
-
 export default function App() {
-  const [jot, setJot] = useState("");
-  const [repo, setRepo] = useState("");
-  const [preferredModel, setPreferredModel] = useState<string>(DEFAULT_MODEL);
-  const [state, setState] = useState<SubmitState>({ status: "idle" });
-  const [dialogOpen, setDialogOpen] = useState(false);
+  const [repoSelection, setRepoSelection] = useState<RepoSelection>(readStoredRepoSelection);
+  const [plansState, setPlansState] = useState<PlansState>({ status: "loading" });
+  const [detailPlan, setDetailPlan] = useState<PlanItem | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [jotOpen, setJotOpen] = useState(false);
+  const [result, setResult] = useState<SubmitResult | null>(null);
+  const [resultOpen, setResultOpen] = useState(false);
 
-  const submitting = state.status === "submitting";
-  const canSubmit = jot.trim().length > 0 && !submitting;
+  /** 上部プルダウンの選択に連動した起票先（API に送る repo 文字列）。 */
+  const repo =
+    repoSelection.selection === REPO_OTHER_VALUE ? repoSelection.otherRepo : repoSelection.selection;
 
-  async function submit(): Promise<void> {
-    if (!canSubmit) return;
-    setState({ status: "submitting", stage: "formatting" });
+  // 選択状態を localStorage へ永続化（ページを開いたときの復元用）。
+  useEffect(() => {
     try {
-      const response = await fetch("/api/submit", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ jot, repo, preferredModel }),
-      });
+      localStorage.setItem(REPO_STORAGE_KEY, JSON.stringify(repoSelection));
+    } catch {
+      // 永続化できなくても当セッションの選択は維持される。
+    }
+  }, [repoSelection]);
 
-      if (!response.ok) {
-        const body = (await response.json().catch(() => null)) as {
-          error?: string;
-        } | null;
-        throw new Error(body?.error ?? `HTTP ${response.status}`);
+  // repo 切り替え競合のガード用（最後に開始した取得のみ状態へ反映する）。
+  const loadSeq = useRef(0);
+
+  const loadPlans = useCallback(async (repoKey: string, force: boolean) => {
+    const seq = ++loadSeq.current;
+
+    // クライアント側メモリキャッシュ: リフレッシュ押下または起票成功まで再 fetch しない。
+    if (!force) {
+      const cached = getCachedPlans(repoKey);
+      if (cached) {
+        setPlansState({ status: "ready", plans: cached });
+        return;
       }
+    }
 
-      const text = await response.text();
-      const events = parseSseEvents(text);
-
-      for (const event of events) {
-        if (event.event === "formatting") {
-          setState({ status: "submitting", stage: "formatting" });
-        } else if (event.event === "creating") {
-          setState({ status: "submitting", stage: "creating" });
-        } else if (event.event === "done") {
-          const result = event.data as unknown as SubmitResult;
-          setJot("");
-          setState({ status: "success", result });
-          setDialogOpen(true);
-        } else if (event.event === "error") {
-          throw new Error(String(event.data.error ?? "不明なエラー"));
-        }
+    setPlansState({ status: "loading" });
+    try {
+      const plans = await fetchPlans(repoKey);
+      if (loadSeq.current === seq) {
+        setPlansState({ status: "ready", plans });
       }
     } catch (error) {
-      setState({
-        status: "error",
-        message: error instanceof Error ? error.message : String(error),
-      });
+      if (loadSeq.current === seq) {
+        setPlansState({
+          status: "error",
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
     }
+  }, []);
+
+  // repo 切り替え時に一覧を読み込む。「その他（自由入力）」モードはキーストロークごとに
+  // otherRepo が変化し、中間文字列は毎回新規キャッシュキーになるため、debounce して
+  // キーストローク毎の fetch を防ぐ（入力停止後に 1 回だけ fetch する）。
+  // セレクト切り替え等の一過性の変更は即時読み込む。
+  useEffect(() => {
+    const delay = repoSelection.selection === REPO_OTHER_VALUE ? OTHER_REPO_DEBOUNCE_MS : 0;
+    const timer = setTimeout(() => {
+      void loadPlans(repo, false);
+    }, delay);
+    return () => clearTimeout(timer);
+  }, [repo, loadPlans, repoSelection.selection]);
+
+  function openPlan(plan: PlanItem): void {
+    setDetailPlan(plan);
+    setDetailOpen(true);
   }
 
+  /** 起票成功: ResultDialog を表示し、キャッシュを破棄して一覧を再取得する。 */
+  function handleJotSuccess(submitResult: SubmitResult): void {
+    setJotOpen(false);
+    setResult(submitResult);
+    setResultOpen(true);
+    invalidatePlansCache();
+    void loadPlans(repo, true);
+  }
+
+  const loading = plansState.status === "loading";
+
   return (
-    <main className="mx-auto flex min-h-dvh w-full max-w-2xl flex-col gap-6 px-4 py-10 sm:py-16">
+    <main className="mx-auto flex min-h-dvh w-full max-w-2xl flex-col gap-6 px-4 py-10 pb-28 sm:py-16">
       <motion.header
         initial={{ opacity: 0, y: 6 }}
         animate={{ opacity: 1, y: 0 }}
@@ -105,91 +152,89 @@ export default function App() {
             </h1>
           </div>
           <p className="text-sm text-muted-foreground">
-            走り書きをそのまま。送信すると GitHub に draft 計画 Issue が起票されます。
+            選択した repo のアクティブな計画 Issue を Project の Status 別に表示します。
           </p>
         </div>
         <ThemeToggle />
       </motion.header>
 
-      <Textarea
-        autoFocus
-        aria-label="jot 本文"
-        value={jot}
-        onChange={(event) => setJot(event.target.value)}
-        onKeyDown={(event) => {
-          if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
-            event.preventDefault();
-            void submit();
-          }
-        }}
-        placeholder={"思ったままを書き留めてください。\nLLM がタイトルを抽出し、本文を Markdown に整えます。"}
-        className="min-h-[40vh] resize-y text-base leading-relaxed"
-      />
-
-      <div className="grid gap-2 sm:grid-cols-2">
-        <RepoSelector onChange={setRepo} disabled={submitting} />
-        <ModelSelector value={preferredModel} onChange={setPreferredModel} disabled={submitting} />
+      <div className="flex items-start gap-2">
+        <div className="min-w-0 flex-1">
+          <RepoSelector
+            selection={repoSelection.selection}
+            otherRepo={repoSelection.otherRepo}
+            onSelectionChange={(selection) =>
+              setRepoSelection((prev) => ({ ...prev, selection }))
+            }
+            onOtherRepoChange={(otherRepo) =>
+              setRepoSelection((prev) => ({ ...prev, otherRepo }))
+            }
+          />
+        </div>
+        <Button
+          variant="outline"
+          size="icon"
+          aria-label="一覧をリフレッシュ"
+          title="一覧をリフレッシュ"
+          disabled={loading}
+          onClick={() => void loadPlans(repo, true)}
+        >
+          <RefreshCw aria-hidden />
+        </Button>
       </div>
 
-      <div className="flex items-center justify-between gap-4">
-        <p className="text-xs text-muted-foreground">
-          ⌘ / Ctrl + Enter で送信 · <span className="font-mono">kind/plan</span> label
-        </p>
+      {plansState.status === "loading" && (
+        <div className="flex items-center gap-2 rounded-lg border px-4 py-6 text-sm text-muted-foreground">
+          <LoaderCircle aria-hidden className="size-4 animate-spin" />
+          計画一覧を読み込み中…
+        </div>
+      )}
+
+      {plansState.status === "error" && (
+        <div role="alert" className="rounded-lg border border-destructive/25 bg-destructive/5 px-4 py-3">
+          <div className="flex items-start gap-2">
+            <CircleAlert aria-hidden className="mt-0.5 size-4 shrink-0 text-destructive" />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium">計画一覧の取得に失敗しました。</p>
+              <p className="mt-0.5 text-xs break-all text-muted-foreground">
+                {plansState.message}
+              </p>
+            </div>
+          </div>
+          <div className="mt-2.5 flex justify-end">
+            <Button variant="outline" size="sm" onClick={() => void loadPlans(repo, true)}>
+              <RotateCcw aria-hidden />
+              リトライ
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {plansState.status === "ready" && (
+        <PlanList plans={plansState.plans} onSelect={openPlan} />
+      )}
+
+      <div className="pointer-events-none fixed inset-x-0 bottom-6 z-40 flex justify-center">
         <MotionButton
           size="lg"
-          disabled={!canSubmit}
-          onClick={() => void submit()}
+          className="pointer-events-auto rounded-full px-6 shadow-md"
           whileTap={{ scale: 0.96 }}
           transition={{ type: "spring", stiffness: 500, damping: 30 }}
+          onClick={() => setJotOpen(true)}
         >
-          {submitting ? (
-            <LoaderCircle aria-hidden className="animate-spin" />
-          ) : (
-            <Send aria-hidden />
-          )}
-          {submitting && state.status === "submitting"
-            ? STAGE_LABEL[state.stage]
-            : "起票"}
+          <PenLine aria-hidden />
+          新しい jot
         </MotionButton>
       </div>
 
-      <AnimatePresence mode="wait">
-        {state.status === "error" && (
-          <motion.div
-            key="error"
-            role="alert"
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -4 }}
-            transition={{ duration: 0.25, ease: "easeOut" }}
-            className="rounded-lg border border-destructive/25 bg-destructive/5 px-4 py-3"
-          >
-            <div className="flex items-start gap-2">
-              <CircleAlert aria-hidden className="mt-0.5 size-4 shrink-0 text-destructive" />
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium">起票に失敗しました。</p>
-                <p className="mt-0.5 text-xs break-all text-muted-foreground">{state.message}</p>
-              </div>
-            </div>
-            <div className="mt-2.5 flex justify-end">
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={!canSubmit}
-                onClick={() => void submit()}
-              >
-                <RotateCcw aria-hidden />
-                リトライ
-              </Button>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <PlanDetailDialog plan={detailPlan} open={detailOpen} onOpenChange={setDetailOpen} />
+
+      <JotDialog open={jotOpen} onOpenChange={setJotOpen} repo={repo} onSuccess={handleJotSuccess} />
 
       <ResultDialog
-        open={dialogOpen}
-        onOpenChange={setDialogOpen}
-        result={state.status === "success" ? state.result : null}
+        open={resultOpen}
+        onOpenChange={setResultOpen}
+        result={result}
       />
     </main>
   );
