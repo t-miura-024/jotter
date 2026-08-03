@@ -34,7 +34,8 @@ type GraphQLEnvelope<T> = {
 async function graphql<T>(
   client: GitHubClient,
   query: string,
-  variables: Record<string, string | number>,
+  // GraphQL の nullable 変数（例: $after: String）は null を渡すため null を許容する。
+  variables: Record<string, string | number | null>,
   action: string,
 ): Promise<T> {
   const response = await client.request("/graphql", {
@@ -171,14 +172,19 @@ export type ProjectIssueStatus = {
 /**
  * Project の items を列挙し、Issue 内容と Status フィールド値を取り出す。
  * Status はフィールド名 "Status" で引く（Project「plans」の固定フィールド）。
- * ページネーションは実装しない（先頭 100 件、個人ツール規模）。
+ * 複数 repo の計画が混在する Project は item 数が 100 を超えうるため、
+ * endCursor を辿るページネーションで全件を取得する。
  * 失敗時は GitHubError を投げる。失敗を許容するかどうかは呼び出し側が決める。
  */
 const PROJECT_ITEMS_QUERY = `
-  query ($projectId: ID!) {
+  query ($projectId: ID!, $after: String) {
     node(id: $projectId) {
       ... on ProjectV2 {
-        items(first: 100) {
+        items(first: 100, after: $after) {
+          pageInfo {
+            hasNextPage
+            endCursor
+          }
           nodes {
             content {
               ... on Issue {
@@ -200,22 +206,51 @@ const PROJECT_ITEMS_QUERY = `
   }
 `;
 
+type ProjectItemNode = {
+  content: { number: number; repository: { nameWithOwner: string } } | null;
+  fieldValueByName: { name: string } | null;
+};
+
+/** Project items の 1 ページ分（pageInfo + nodes）。 */
+type ProjectItemsPage = {
+  pageInfo?: { hasNextPage: boolean; endCursor: string | null };
+  nodes: ProjectItemNode[];
+};
+
+/** 異常な pageInfo が返っても無限ループしないための安全上限（100 件 x 100 ページ）。 */
+const PROJECT_ITEMS_MAX_PAGES = 100;
+
+/** Project items を 1 ページ分取得する（after カーソル指定可）。 */
+async function fetchProjectItemsPage(
+  client: GitHubClient,
+  projectId: string,
+  after: string | null,
+): Promise<ProjectItemsPage | undefined> {
+  const data = await graphql<{ node: { items?: ProjectItemsPage } | null }>(
+    client,
+    PROJECT_ITEMS_QUERY,
+    { projectId, after },
+    "Project items の取得に失敗しました",
+  );
+  return data.node?.items;
+}
+
 export async function listProjectIssueStatuses(
   client: GitHubClient,
   projectId: string,
 ): Promise<ProjectIssueStatus[]> {
-  const data = await graphql<{
-    node: {
-      items?: {
-        nodes: Array<{
-          content: { number: number; repository: { nameWithOwner: string } } | null;
-          fieldValueByName: { name: string } | null;
-        }>;
-      };
-    } | null;
-  }>(client, PROJECT_ITEMS_QUERY, { projectId }, "Project items の取得に失敗しました");
+  const nodes: ProjectItemNode[] = [];
+  let after: string | null = null;
 
-  const nodes = data.node?.items?.nodes ?? [];
+  for (let page = 0; page < PROJECT_ITEMS_MAX_PAGES; page++) {
+    const items = await fetchProjectItemsPage(client, projectId, after);
+    if (!items) break;
+    nodes.push(...items.nodes);
+
+    if (!items.pageInfo?.hasNextPage || !items.pageInfo.endCursor) break;
+    after = items.pageInfo.endCursor;
+  }
+
   return nodes.flatMap((node) => {
     // content が Issue 以外（PR 等）の item は対象外。
     if (!node.content) return [];

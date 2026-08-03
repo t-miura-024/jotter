@@ -1,3 +1,5 @@
+import { CircleCheck, CircleQuestionMark, Hammer, Sparkles, Sprout } from "lucide-react";
+
 import type { PlanItem, PlanStatus } from "@/lib/plans";
 
 /** Status 別 5 グループの表示順（ライフサイクル順 + 未登録）。 */
@@ -15,6 +17,15 @@ const GROUP_LABEL: Record<PlanStatus, string> = {
   "in-progress": "in-progress",
   done: "done",
   unregistered: "未登録",
+};
+
+/** 見出しの視認性向上用。ライフサイクルの進行を直感的に示す。 */
+const GROUP_ICON: Record<PlanStatus, typeof Sprout> = {
+  draft: Sprout,
+  refined: Sparkles,
+  "in-progress": Hammer,
+  done: CircleCheck,
+  unregistered: CircleQuestionMark,
 };
 
 type PlanListProps = {
@@ -41,9 +52,11 @@ export function PlanList({ plans, onSelect }: PlanListProps) {
     <div className="flex flex-col gap-5">
       {PLAN_GROUP_ORDER.map((status) => {
         const items = grouped.get(status)!;
+        const Icon = GROUP_ICON[status];
         return (
           <section key={status} className="flex flex-col gap-1.5">
-            <h2 className="flex items-baseline gap-2 px-0.5 text-xs font-semibold text-muted-foreground">
+            <h2 className="flex items-center gap-1.5 px-0.5 text-xs font-semibold text-muted-foreground">
+              <Icon aria-hidden className="size-3.5 shrink-0" />
               <span className="font-mono uppercase tracking-wide">{GROUP_LABEL[status]}</span>
               <span className="font-mono text-[11px] tabular-nums">{items.length}</span>
             </h2>

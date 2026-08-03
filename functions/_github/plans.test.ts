@@ -168,7 +168,7 @@ describe("listPlans", () => {
     const graphqlCall = fetchMock.mock.calls[1];
     expect(String(graphqlCall[0])).toBe("https://api.github.com/graphql");
     const body = JSON.parse(String(graphqlCall[1]?.body));
-    expect(body.variables).toEqual({ projectId: "PVT_project" });
+    expect(body.variables).toEqual({ projectId: "PVT_project", after: null });
     expect(body.query).toContain("fieldValueByName");
   });
 
