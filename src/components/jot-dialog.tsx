@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import { CircleAlert, LoaderCircle, RotateCcw, Send, WifiOff } from "lucide-react";
+import { AnimatePresence } from "motion/react";
 
 import { DEFAULT_MODEL, ModelSelector } from "@/components/model-selector";
 import { Button } from "@/components/ui/button";
@@ -11,11 +12,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { SubmitOverlay, type SubmitStage } from "@/components/submit-overlay";
 import { Textarea } from "@/components/ui/textarea";
 import type { SubmitResult } from "@/components/result-dialog";
 import { describeJotTarget } from "@/lib/target";
-
-type SubmitStage = "formatting" | "creating";
 
 type SubmitState =
   | { status: "idle" }
@@ -57,6 +57,10 @@ export function JotDialog({ open, onOpenChange, repo, onSuccess }: JotDialogProp
   const [jot, setJot] = useState("");
   const [preferredModel, setPreferredModel] = useState<string>(DEFAULT_MODEL);
   const [state, setState] = useState<SubmitState>({ status: "idle" });
+  // done 受信後もオーバーレイの成功シーケンス（飛び立ち＋合図）を完走させてから
+  // onSuccess を呼ぶため、結果と完了フラグを一時保持する。
+  const [pendingResult, setPendingResult] = useState<SubmitResult | null>(null);
+  const [submitDone, setSubmitDone] = useState(false);
 
   const submitting = state.status === "submitting";
   const canSubmit = jot.trim().length > 0 && !submitting;
@@ -64,6 +68,8 @@ export function JotDialog({ open, onOpenChange, repo, onSuccess }: JotDialogProp
 
   async function submit(): Promise<void> {
     if (!canSubmit) return;
+    setPendingResult(null);
+    setSubmitDone(false);
     setState({ status: "submitting", stage: "formatting" });
     try {
       const response = await fetch("/api/submit", {
@@ -89,9 +95,8 @@ export function JotDialog({ open, onOpenChange, repo, onSuccess }: JotDialogProp
           setState({ status: "submitting", stage: "creating" });
         } else if (event.event === "done") {
           const result = event.data as unknown as SubmitResult;
-          setJot("");
-          setState({ status: "idle" });
-          onSuccess(result);
+          setPendingResult(result);
+          setSubmitDone(true);
         } else if (event.event === "error") {
           throw new Error(String(event.data.error ?? "不明なエラー"));
         }
@@ -111,9 +116,30 @@ export function JotDialog({ open, onOpenChange, repo, onSuccess }: JotDialogProp
     }
   }
 
+  /** オーバーレイの成功シーケンス完走: 状態を片付けてから結果を親に渡す。 */
+  function handleOverlayFinished(): void {
+    const result = pendingResult;
+    setJot("");
+    setPendingResult(null);
+    setSubmitDone(false);
+    setState({ status: "idle" });
+    if (result) {
+      onSuccess(result);
+    }
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl sm:max-w-2xl">
+      <DialogContent
+        className="max-w-2xl sm:max-w-2xl"
+        showCloseButton={!submitting}
+        onEscapeKeyDown={(event) => {
+          if (submitting) event.preventDefault();
+        }}
+        onInteractOutside={(event) => {
+          if (submitting) event.preventDefault();
+        }}
+      >
         <DialogHeader>
           <DialogTitle>新しい jot</DialogTitle>
           <DialogDescription>
@@ -137,6 +163,7 @@ export function JotDialog({ open, onOpenChange, repo, onSuccess }: JotDialogProp
           <Textarea
             autoFocus
             aria-label="jot 本文"
+            disabled={submitting}
             value={jot}
             onChange={(event) => setJot(event.target.value)}
             onKeyDown={(event) => {
@@ -211,6 +238,17 @@ export function JotDialog({ open, onOpenChange, repo, onSuccess }: JotDialogProp
             </Button>
           </div>
         </div>
+
+        <AnimatePresence>
+          {submitting && state.status === "submitting" && (
+            <SubmitOverlay
+              stage={state.stage}
+              jot={jot}
+              done={submitDone}
+              onFinished={handleOverlayFinished}
+            />
+          )}
+        </AnimatePresence>
       </DialogContent>
     </Dialog>
   );
