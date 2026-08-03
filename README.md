@@ -35,13 +35,13 @@ pnpm dev         # http://localhost:5173（/api/* は localhost:8788 へプロ�
 
 ## Secrets / 環境変数
 
-| 名前                | 必須 | 説明                                                                                                                               |
-| ------------------- | ---- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `GITHUB_PAT`        | ✅   | GitHub Classic PAT（scope: `repo` + `project`、[ADR 0002](docs/adr/0002-github-classic-pat.md)）。ブラウザには一切公開されません。 |
-| `GEMINI_API_KEY`    | ✅   | Gemini API key（LLM 整形用、[ADR 0005](docs/adr/0005-gemini-speed-first-fallback.md)）。未設定時は起票リクエストが 500 になります。 |
-| `PROJECT_ID`        | 任意 | GitHub ProjectV2 の node ID（`PVT_...`）。3 つすべて揃えると Project 連携が有効化されます。                                        |
-| `STATUS_FIELD_ID`   | 任意 | ProjectV2 の Status フィールド ID（`PVTSSF_...`）。                                                                                |
-| `STATUS_OPTION_ID`  | 任意 | Status=draft の option ID。                                                                                                        |
+| 名前               | 必須 | 説明                                                                                                                                |
+| ------------------ | ---- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `GITHUB_PAT`       | ✅   | GitHub Classic PAT（scope: `repo` + `project`、[ADR 0002](docs/adr/0002-github-classic-pat.md)）。ブラウザには一切公開されません。  |
+| `GEMINI_API_KEY`   | ✅   | Gemini API key（LLM 整形用、[ADR 0005](docs/adr/0005-gemini-speed-first-fallback.md)）。未設定時は起票リクエストが 500 になります。 |
+| `PROJECT_ID`       | 任意 | GitHub ProjectV2 の node ID（`PVT_...`）。3 つすべて揃えると Project 連携が有効化されます。                                         |
+| `STATUS_FIELD_ID`  | 任意 | ProjectV2 の Status フィールド ID（`PVTSSF_...`）。                                                                                 |
+| `STATUS_OPTION_ID` | 任意 | Status=draft の option ID。                                                                                                         |
 
 - ローカル: `.dev.vars.example` を `.dev.vars` にコピーして値を設定（`wrangler pages dev` が読み込みます）。
 - 本番: `pnpm wrangler pages secret put GITHUB_PAT`（他も同様に `secret put`）。
@@ -60,6 +60,17 @@ pnpm dev         # http://localhost:5173（/api/* は localhost:8788 へプロ�
 pnpm build
 pnpm pages:deploy   # または Cloudflare Pages の Git 連携
 ```
+
+## PWA
+
+vite-plugin-pwa（generateSW）で PWA 対応済み。
+
+- インストール: スマホの「ホーム画面に追加」/ デスクトップ Chrome のインストールからインストールでき、standalone で起動します
+- オフライン: 静的アセット（app shell）は precache され、オフラインでも UI が開きます。起票はネットワーク必須のため、オフライン中に起票すると専用メッセージ + リトライボタンを表示し、jot 本文は保持されます。オフラインキューイングは設計上不導入です（[ADR 0006](docs/adr/0006-stateless-mvp.md)）
+- 更新: 新バージョンのデプロイを検知するとトーストで知らせ、ユーザー操作でリロードして適用します（`registerType: prompt`。サイレント自動更新はしません）
+- キャッシュ範囲: 静的アセットのみ。`/api/*` のレスポンスと Cloudflare Access のログインリダイレクトは Service Worker に一切キャッシュされません
+- 開発: `pnpm dev` では Service Worker を登録しません。PWA 挙動の確認は `pnpm pages:dev` で行ってください
+- アイコン: `public/favicon.svg` から `pnpm icons:generate`（scripts/generate-icons.mjs）で再生成できます
 
 ## Cloudflare Access のセットアップ（必須・手動）
 
@@ -80,13 +91,14 @@ pnpm pages:deploy   # または Cloudflare Pages の Git 連携
 
 ## Scripts
 
-| コマンド            | 内容                                                  |
-| ------------------- | ----------------------------------------------------- |
-| `pnpm dev`          | Vite dev server（/api は 8788 へプロキシ）            |
-| `pnpm build`        | typecheck + 本番ビルド（`dist/`）                     |
-| `pnpm typecheck`    | `tsc -b`（app / node / functions の 3 プロジェクト）  |
-| `pnpm test`         | vitest（Pages Functions の単体テスト）                |
-| `pnpm lint`         | oxlint                                                |
-| `pnpm format`       | oxfmt                                                 |
-| `pnpm pages:dev`    | ビルド + `wrangler pages dev`（ローカルフルスタック） |
-| `pnpm pages:deploy` | `wrangler pages deploy dist`                          |
+| コマンド              | 内容                                                  |
+| --------------------- | ----------------------------------------------------- |
+| `pnpm dev`            | Vite dev server（/api は 8788 へプロキシ）            |
+| `pnpm build`          | typecheck + 本番ビルド（`dist/`）                     |
+| `pnpm typecheck`      | `tsc -b`（app / node / functions の 3 プロジェクト）  |
+| `pnpm test`           | vitest（Pages Functions の単体テスト）                |
+| `pnpm lint`           | oxlint                                                |
+| `pnpm format`         | oxfmt                                                 |
+| `pnpm pages:dev`      | ビルド + `wrangler pages dev`（ローカルフルスタック） |
+| `pnpm pages:deploy`   | `wrangler pages deploy dist`                          |
+| `pnpm icons:generate` | `public/favicon.svg` から PWA アイコン PNG を再生成   |

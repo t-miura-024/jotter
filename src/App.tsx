@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-import { CircleAlert, LoaderCircle, PenLine, RotateCcw, Send } from "lucide-react";
+import { CircleAlert, LoaderCircle, PenLine, RotateCcw, Send, WifiOff } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 
 import { DEFAULT_MODEL, ModelSelector } from "@/components/model-selector";
@@ -9,6 +9,7 @@ import { ResultDialog, type SubmitResult } from "@/components/result-dialog";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { UpdateToast } from "@/components/update-toast";
 
 type SubmitStage = "formatting" | "creating";
 
@@ -16,7 +17,8 @@ type SubmitState =
   | { status: "idle" }
   | { status: "submitting"; stage: SubmitStage }
   | { status: "success"; result: SubmitResult }
-  | { status: "error"; message: string };
+  | { status: "error"; message: string }
+  | { status: "offline" };
 
 const STAGE_LABEL: Record<SubmitStage, string> = {
   formatting: "LLM が整形中…",
@@ -82,6 +84,13 @@ export default function App() {
         }
       }
     } catch (error) {
+      // オフライン（navigator.onLine が false、または fetch のネットワーク失敗 =
+      // same-origin への TypeError）は専用メッセージで案内する。jot 本文は保持される。
+      // オフラインキューイングは行わない（ADR 0006）。
+      if (!navigator.onLine || error instanceof TypeError) {
+        setState({ status: "offline" });
+        return;
+      }
       setState({
         status: "error",
         message: error instanceof Error ? error.message : String(error),
@@ -122,7 +131,9 @@ export default function App() {
             void submit();
           }
         }}
-        placeholder={"思ったままを書き留めてください。\nLLM がタイトルを抽出し、本文を Markdown に整えます。"}
+        placeholder={
+          "思ったままを書き留めてください。\nLLM がタイトルを抽出し、本文を Markdown に整えます。"
+        }
         className="min-h-[40vh] resize-y text-base leading-relaxed"
       />
 
@@ -147,13 +158,43 @@ export default function App() {
           ) : (
             <Send aria-hidden />
           )}
-          {submitting && state.status === "submitting"
-            ? STAGE_LABEL[state.stage]
-            : "起票"}
+          {submitting && state.status === "submitting" ? STAGE_LABEL[state.stage] : "起票"}
         </MotionButton>
       </div>
 
       <AnimatePresence mode="wait">
+        {state.status === "offline" && (
+          <motion.div
+            key="offline"
+            role="alert"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            transition={{ duration: 0.25, ease: "easeOut" }}
+            className="rounded-lg border border-border bg-muted px-4 py-3"
+          >
+            <div className="flex items-start gap-2">
+              <WifiOff aria-hidden className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium">オフラインです。</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  起票にはネットワーク接続が必要です。走り書きの内容は保持されています。
+                </p>
+              </div>
+            </div>
+            <div className="mt-2.5 flex justify-end">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={!canSubmit}
+                onClick={() => void submit()}
+              >
+                <RotateCcw aria-hidden />
+                リトライ
+              </Button>
+            </div>
+          </motion.div>
+        )}
         {state.status === "error" && (
           <motion.div
             key="error"
@@ -191,6 +232,8 @@ export default function App() {
         onOpenChange={setDialogOpen}
         result={state.status === "success" ? state.result : null}
       />
+
+      <UpdateToast />
     </main>
   );
 }

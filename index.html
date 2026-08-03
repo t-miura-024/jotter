@@ -3,7 +3,12 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- theme-color: light を既定とし、dark は OS テーマに追従させる二重 meta。
+         JS 読み込み後は ThemeToggle（手動設定含む）が解決値へ同期する。 -->
+    <meta name="theme-color" content="#ffffff" />
+    <meta name="theme-color" content="#0a0a0a" media="(prefers-color-scheme: dark)" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon-180x180.png" />
     <title>Jotter</title>
     <script>
       // FOUC 防止: 初期描画前に手動設定（localStorage）またはシステム設定へ dark クラスを同期する。
@@ -15,6 +20,14 @@
           ((theme === null || theme === "system") &&
             matchMedia("(prefers-color-scheme: dark)").matches);
         if (dark) document.documentElement.classList.add("dark");
+        // theme-color も解決済みテーマへ同期する（media 条件 meta は除去して優先）。
+        var themeColorMeta = document.querySelector('meta[name="theme-color"]');
+        if (themeColorMeta) {
+          themeColorMeta.setAttribute("content", dark ? "#0a0a0a" : "#ffffff");
+          document.querySelectorAll('meta[name="theme-color"][media]').forEach(function (meta) {
+            meta.remove();
+          });
+        }
       } catch (error) {}
     </script>
   </head>
