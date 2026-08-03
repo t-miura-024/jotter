@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-import { CircleAlert, LoaderCircle, RotateCcw, Send } from "lucide-react";
+import { CircleAlert, LoaderCircle, RotateCcw, Send, WifiOff } from "lucide-react";
 
 import { DEFAULT_MODEL, ModelSelector } from "@/components/model-selector";
 import { Button } from "@/components/ui/button";
@@ -20,7 +20,8 @@ type SubmitStage = "formatting" | "creating";
 type SubmitState =
   | { status: "idle" }
   | { status: "submitting"; stage: SubmitStage }
-  | { status: "error"; message: string };
+  | { status: "error"; message: string }
+  | { status: "offline" };
 
 const STAGE_LABEL: Record<SubmitStage, string> = {
   formatting: "LLM が整形中…",
@@ -96,6 +97,13 @@ export function JotDialog({ open, onOpenChange, repo, onSuccess }: JotDialogProp
         }
       }
     } catch (error) {
+      // オフライン（navigator.onLine が false、または fetch のネットワーク失敗 =
+      // same-origin への TypeError）は専用メッセージで案内する。jot 本文は保持される。
+      // オフラインキューイングは行わない（ADR 0006）。
+      if (!navigator.onLine || error instanceof TypeError) {
+        setState({ status: "offline" });
+        return;
+      }
       setState({
         status: "error",
         message: error instanceof Error ? error.message : String(error),
@@ -140,6 +148,31 @@ export function JotDialog({ open, onOpenChange, repo, onSuccess }: JotDialogProp
             placeholder={"思ったままを書き留めてください。\nLLM がタイトルを抽出し、本文を Markdown に整えます。"}
             className="min-h-[30vh] resize-y text-base leading-relaxed"
           />
+
+          {state.status === "offline" && (
+            <div role="alert" className="rounded-lg border border-border bg-muted px-4 py-3">
+              <div className="flex items-start gap-2">
+                <WifiOff aria-hidden className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium">オフラインです。</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    起票にはネットワーク接続が必要です。走り書きの内容は保持されています。
+                  </p>
+                </div>
+              </div>
+              <div className="mt-2.5 flex justify-end">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={!canSubmit}
+                  onClick={() => void submit()}
+                >
+                  <RotateCcw aria-hidden />
+                  リトライ
+                </Button>
+              </div>
+            </div>
+          )}
 
           {state.status === "error" && (
             <div role="alert" className="rounded-lg border border-destructive/25 bg-destructive/5 px-4 py-3">

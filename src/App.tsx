@@ -10,6 +10,7 @@ import { REPO_OTHER_VALUE, RepoSelector } from "@/components/repo-selector";
 import { ResultDialog, type SubmitResult } from "@/components/result-dialog";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
+import { UpdateToast } from "@/components/update-toast";
 import {
   fetchPlans,
   getCachedPlans,
@@ -236,6 +237,8 @@ export default function App() {
         onOpenChange={setResultOpen}
         result={result}
       />
+
+      <UpdateToast />
     </main>
   );
 }

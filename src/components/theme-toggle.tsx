@@ -9,6 +9,12 @@ type Theme = "system" | "light" | "dark";
 /** index.html の FOUC 防止スクリプトと共通のキー・判定ロジックを参照する。 */
 const STORAGE_KEY = "jotter-theme";
 
+/** index.html の theme-color 二重 meta と同じ色値（light 既定 / dark は OS 追従）。 */
+const THEME_COLOR = {
+  light: "#ffffff",
+  dark: "#0a0a0a",
+} as const;
+
 const NEXT_THEME: Record<Theme, Theme> = {
   system: "light",
   light: "dark",
@@ -39,10 +45,23 @@ function readStoredTheme(): Theme {
   return "system";
 }
 
+/**
+ * theme-color meta を解決済みテーマへ同期する。index.html では light 既定 +
+ * prefers-color-scheme 条件の二重 meta を置くが、手動設定が OS テーマと異なる
+ * 場合に備え、JS 解決後は条件付き meta を除去して先頭 meta に解決値を固定する。
+ */
+function applyThemeColor(dark: boolean): void {
+  const metas = document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]');
+  if (metas.length === 0) return;
+  metas[0].content = dark ? THEME_COLOR.dark : THEME_COLOR.light;
+  for (let i = 1; i < metas.length; i += 1) metas[i].remove();
+}
+
 function applyTheme(theme: Theme): void {
   const dark =
     theme === "dark" || (theme === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
   document.documentElement.classList.toggle("dark", dark);
+  applyThemeColor(dark);
 }
 
 /**

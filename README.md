@@ -72,6 +72,17 @@ pnpm build
 pnpm pages:deploy
 ```
 
+## PWA
+
+vite-plugin-pwa（generateSW）で PWA 対応済み。
+
+- インストール: スマホの「ホーム画面に追加」/ デスクトップ Chrome のインストールからインストールでき、standalone で起動します
+- オフライン: 静的アセット（app shell）は precache され、オフラインでも UI が開きます。起票はネットワーク必須のため、オフライン中に起票すると専用メッセージ + リトライボタンを表示し、jot 本文は保持されます。オフラインキューイングは設計上不導入です（[ADR 0006](docs/adr/0006-stateless-mvp.md)）
+- 更新: 新バージョンのデプロイを検知するとトーストで知らせ、ユーザー操作でリロードして適用します（`registerType: prompt`。サイレント自動更新はしません）
+- キャッシュ範囲: 静的アセットのみ。`/api/*` のレスポンスと Cloudflare Access のログインリダイレクトは Service Worker に一切キャッシュされません
+- 開発: `pnpm dev` では Service Worker を登録しません。PWA 挙動の確認は `pnpm pages:dev` で行ってください
+- アイコン: `public/favicon.svg` から `pnpm icons:generate`（scripts/generate-icons.mjs）で再生成できます
+
 ## Cloudflare Access のセットアップ（必須・手動）
 
 このアプリは Cloudflare Access 経由でのみアクセス可能にします（コードでは設定できないため手動手順）。
@@ -91,13 +102,14 @@ pnpm pages:deploy
 
 ## Scripts
 
-| コマンド            | 内容                                                  |
-| ------------------- | ----------------------------------------------------- |
-| `pnpm dev`          | Vite dev server（/api は 8788 へプロキシ）            |
-| `pnpm build`        | typecheck + 本番ビルド（`dist/`）                     |
-| `pnpm typecheck`    | `tsc -b`（app / node / functions の 3 プロジェクト）  |
-| `pnpm test`         | vitest（Pages Functions の単体テスト）                |
-| `pnpm lint`         | oxlint                                                |
-| `pnpm format`       | oxfmt                                                 |
-| `pnpm pages:dev`    | ビルド + `wrangler pages dev`（ローカルフルスタック） |
-| `pnpm pages:deploy` | `wrangler pages deploy dist`                          |
+| コマンド              | 内容                                                  |
+| --------------------- | ----------------------------------------------------- |
+| `pnpm dev`            | Vite dev server（/api は 8788 へプロキシ）            |
+| `pnpm build`          | typecheck + 本番ビルド（`dist/`）                     |
+| `pnpm typecheck`      | `tsc -b`（app / node / functions の 3 プロジェクト）  |
+| `pnpm test`           | vitest（Pages Functions の単体テスト）                |
+| `pnpm lint`           | oxlint                                                |
+| `pnpm format`         | oxfmt                                                 |
+| `pnpm pages:dev`      | ビルド + `wrangler pages dev`（ローカルフルスタック） |
+| `pnpm pages:deploy`   | `wrangler pages deploy dist`                          |
+| `pnpm icons:generate` | `public/favicon.svg` から PWA アイコン PNG を再生成   |
