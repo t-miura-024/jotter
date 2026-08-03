@@ -42,9 +42,12 @@ pnpm dev         # http://localhost:5173（/api/* は localhost:8788 へプロ�
 | `PROJECT_ID`        | 任意 | GitHub ProjectV2 の node ID（`PVT_...`）。3 つすべて揃えると Project 連携が有効化されます。                                        |
 | `STATUS_FIELD_ID`   | 任意 | ProjectV2 の Status フィールド ID（`PVTSSF_...`）。                                                                                |
 | `STATUS_OPTION_ID`  | 任意 | Status=draft の option ID。                                                                                                        |
+| `CLOUDFLARE_API_TOKEN` | CI  | Cloudflare API トークン（Pages: Edit 権限）。GitHub Actions による自動デプロイ専用で、アプリのランタイムでは使いません。           |
+| `CLOUDFLARE_ACCOUNT_ID` | CI | Cloudflare Account ID。同上。                                                                                                      |
 
 - ローカル: `.dev.vars.example` を `.dev.vars` にコピーして値を設定（`wrangler pages dev` が読み込みます）。
 - 本番: `pnpm wrangler pages secret put GITHUB_PAT`（他も同様に `secret put`）。
+- CI 用（`CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID`）: GitHub の Settings → Secrets and variables → Actions に repo secret として登録します（コードでは設定不可）。
 
 ## 起票ルール
 
@@ -56,9 +59,17 @@ pnpm dev         # http://localhost:5173（/api/* は localhost:8788 へプロ�
 
 ## デプロイ
 
+`main` ブランチへの push で GitHub Actions が自動実行されます（[ADR 0009](docs/adr/0009-github-actions-over-pages-git-integration.md)）。build（typecheck 内包）→ lint → test のすべて合格後に Cloudflare Pages へデプロイされ、いずれかが失敗した場合はデプロイされません。デプロイ中の新たな push は古い run をキャンセルして優先されます。
+
+前提: GitHub の repo secrets に `CLOUDFLARE_API_TOKEN`（Pages: Edit 権限の API トークン）と `CLOUDFLARE_ACCOUNT_ID` が登録済みであること（上記 Secrets / 環境変数節の CI 用項目参照）。
+
+### 非常時の手動デプロイ
+
+CI が使えない場合のみ、ローカルから手動デプロイします:
+
 ```bash
 pnpm build
-pnpm pages:deploy   # または Cloudflare Pages の Git 連携
+pnpm pages:deploy
 ```
 
 ## Cloudflare Access のセットアップ（必須・手動）
