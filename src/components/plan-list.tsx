@@ -1,6 +1,7 @@
 import { CircleCheck, CircleQuestionMark, Hammer, Sparkles, Sprout } from "lucide-react";
 
 import type { PlanItem, PlanStatus } from "@/lib/plans";
+import { cn } from "@/lib/utils";
 
 /** Status 別 5 グループの表示順（ライフサイクル順 + 未登録）。 */
 export const PLAN_GROUP_ORDER: PlanStatus[] = [
@@ -26,6 +27,15 @@ const GROUP_ICON: Record<PlanStatus, typeof Sprout> = {
   "in-progress": Hammer,
   done: CircleCheck,
   unregistered: CircleQuestionMark,
+};
+
+/** アイコンの Status 別カラー。light/dark 両方で読める落ち着いた色を選ぶ。 */
+const GROUP_ICON_CLASS: Record<PlanStatus, string> = {
+  draft: "text-teal-600 dark:text-teal-400",
+  refined: "text-violet-600 dark:text-violet-400",
+  "in-progress": "text-amber-600 dark:text-amber-500",
+  done: "text-green-600 dark:text-green-400",
+  unregistered: "text-rose-500 dark:text-rose-400",
 };
 
 type PlanListProps = {
@@ -56,7 +66,7 @@ export function PlanList({ plans, onSelect }: PlanListProps) {
         return (
           <section key={status} className="flex flex-col gap-1.5">
             <h2 className="flex items-center gap-1.5 px-0.5 text-xs font-semibold text-muted-foreground">
-              <Icon aria-hidden className="size-3.5 shrink-0" />
+              <Icon aria-hidden className={cn("size-3.5 shrink-0", GROUP_ICON_CLASS[status])} />
               <span className="font-mono uppercase tracking-wide">{GROUP_LABEL[status]}</span>
               <span className="font-mono text-[11px] tabular-nums">{items.length}</span>
             </h2>
