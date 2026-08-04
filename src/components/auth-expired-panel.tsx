@@ -5,7 +5,8 @@ import { Button } from "@/components/ui/button";
 /** Access ログイン URL へ移動して再認証する。 */
 function relogin(): void {
   // /api/* は SW の navigateFallbackDenylist のためネットワーク直通でログイン画面が表示される。
-  window.location.href = "/api/repos";
+  // 認証後は /api/auth/return がアプリトップへ 302 する。
+  window.location.href = "/api/auth/return";
 }
 
 /** セッション切れ（Cloudflare Access）を通知し、再ログインへ誘導するパネル。 */
