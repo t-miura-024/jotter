@@ -1,3 +1,5 @@
+import { apiFetch } from "@/lib/api";
+
 /** GitHub Project「plans」の Status 別 5 グループ（/api/plans の status と対応）。 */
 export type PlanStatus = "draft" | "refined" | "in-progress" | "done" | "unregistered";
 
@@ -25,7 +27,7 @@ export function getCachedPlans(repo: string): PlanItem[] | undefined {
 
 /** /api/plans から計画一覧を取得し、メモリキャッシュへ保存する。 */
 export async function fetchPlans(repo: string): Promise<PlanItem[]> {
-  const response = await fetch(`/api/plans?repo=${encodeURIComponent(repo)}`);
+  const response = await apiFetch(`/api/plans?repo=${encodeURIComponent(repo)}`);
   if (!response.ok) {
     const body = (await response.json().catch(() => null)) as { error?: string } | null;
     throw new Error(body?.error ?? `HTTP ${response.status}`);

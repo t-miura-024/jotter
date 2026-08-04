@@ -9,8 +9,10 @@ import { PlanList } from "@/components/plan-list";
 import { REPO_OTHER_VALUE, RepoSelector } from "@/components/repo-selector";
 import { ResultDialog, type SubmitResult } from "@/components/result-dialog";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { AuthExpiredPanel } from "@/components/auth-expired-panel";
 import { Button } from "@/components/ui/button";
 import { UpdateToast } from "@/components/update-toast";
+import { AuthExpiredError } from "@/lib/api";
 import {
   fetchPlans,
   getCachedPlans,
@@ -21,7 +23,7 @@ import {
 type PlansState =
   | { status: "loading" }
   | { status: "ready"; plans: PlanItem[] }
-  | { status: "error"; message: string };
+  | { status: "error"; message: string; authExpired: boolean };
 
 /** repo 選択の localStorage キー（キー名は AI 判断範囲で決定）。 */
 const REPO_STORAGE_KEY = "jotter-repo-selection";
@@ -104,6 +106,7 @@ export default function App() {
         setPlansState({
           status: "error",
           message: error instanceof Error ? error.message : String(error),
+          authExpired: error instanceof AuthExpiredError,
         });
       }
     }
@@ -191,25 +194,28 @@ export default function App() {
         </div>
       )}
 
-      {plansState.status === "error" && (
-        <div role="alert" className="rounded-lg border border-destructive/25 bg-destructive/5 px-4 py-3">
-          <div className="flex items-start gap-2">
-            <CircleAlert aria-hidden className="mt-0.5 size-4 shrink-0 text-destructive" />
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium">計画一覧の取得に失敗しました。</p>
-              <p className="mt-0.5 text-xs break-all text-muted-foreground">
-                {plansState.message}
-              </p>
+      {plansState.status === "error" &&
+        (plansState.authExpired ? (
+          <AuthExpiredPanel />
+        ) : (
+          <div role="alert" className="rounded-lg border border-destructive/25 bg-destructive/5 px-4 py-3">
+            <div className="flex items-start gap-2">
+              <CircleAlert aria-hidden className="mt-0.5 size-4 shrink-0 text-destructive" />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium">計画一覧の取得に失敗しました。</p>
+                <p className="mt-0.5 text-xs break-all text-muted-foreground">
+                  {plansState.message}
+                </p>
+              </div>
+            </div>
+            <div className="mt-2.5 flex justify-end">
+              <Button variant="outline" size="sm" onClick={() => void loadPlans(repo, true)}>
+                <RotateCcw aria-hidden />
+                リトライ
+              </Button>
             </div>
           </div>
-          <div className="mt-2.5 flex justify-end">
-            <Button variant="outline" size="sm" onClick={() => void loadPlans(repo, true)}>
-              <RotateCcw aria-hidden />
-              リトライ
-            </Button>
-          </div>
-        </div>
-      )}
+        ))}
 
       {plansState.status === "ready" && (
         <PlanList plans={plansState.plans} onSelect={openPlan} />

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import { LoaderCircle } from "lucide-react";
 
+import { apiFetch } from "@/lib/api";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -54,7 +55,7 @@ export function RepoSelector({
 
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/repos")
+    apiFetch("/api/repos")
       .then((response) => {
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         return response.json() as Promise<{ repos: RepoEntry[] }>;

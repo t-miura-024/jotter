@@ -4,6 +4,8 @@ import { CircleAlert, LoaderCircle, RotateCcw, Send, WifiOff } from "lucide-reac
 import { AnimatePresence } from "motion/react";
 
 import { DEFAULT_MODEL, ModelSelector } from "@/components/model-selector";
+import { AuthExpiredError, apiFetch } from "@/lib/api";
+import { AuthExpiredPanel } from "@/components/auth-expired-panel";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -21,7 +23,8 @@ type SubmitState =
   | { status: "idle" }
   | { status: "submitting"; stage: SubmitStage }
   | { status: "error"; message: string }
-  | { status: "offline" };
+  | { status: "offline" }
+  | { status: "authExpired" };
 
 const STAGE_LABEL: Record<SubmitStage, string> = {
   formatting: "LLM が整形中…",
@@ -72,7 +75,7 @@ export function JotDialog({ open, onOpenChange, repo, onSuccess }: JotDialogProp
     setSubmitDone(false);
     setState({ status: "submitting", stage: "formatting" });
     try {
-      const response = await fetch("/api/submit", {
+      const response = await apiFetch("/api/submit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ jot, repo, preferredModel }),
@@ -102,6 +105,11 @@ export function JotDialog({ open, onOpenChange, repo, onSuccess }: JotDialogProp
         }
       }
     } catch (error) {
+      // セッション切れ（Access への 302）は再ログインを促す。
+      if (error instanceof AuthExpiredError) {
+        setState({ status: "authExpired" });
+        return;
+      }
       // オフライン（navigator.onLine が false、または fetch のネットワーク失敗 =
       // same-origin への TypeError）は専用メッセージで案内する。jot 本文は保持される。
       // オフラインキューイングは行わない（ADR 0006）。
@@ -223,6 +231,8 @@ export function JotDialog({ open, onOpenChange, repo, onSuccess }: JotDialogProp
               </div>
             </div>
           )}
+
+          {state.status === "authExpired" && <AuthExpiredPanel />}
 
           <div className="flex items-center justify-between gap-4">
             <p className="text-xs text-muted-foreground">
