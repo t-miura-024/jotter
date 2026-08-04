@@ -89,8 +89,11 @@ vite-plugin-pwa（generateSW）で PWA 対応済み。
 
 1. [Cloudflare ダッシュボード](https://dash.cloudflare.com/) → **Zero Trust** → **Access controls** → **Applications** → **Create new application**
 2. **Self-hosted and private** → **Add public hostname**
-3. Application domain: Pages プロジェクトのドメイン（例: `jotter.pages.dev`）を指定。
-   `/api/*` を含むドメイン全体に Access がかかります。
+3. Application domain: Pages プロジェクトのドメイン（例: `jotter.pages.dev`）を指定し、
+   **Path** に `/api/*` を設定して保護範囲を API のみに絞る。
+   app shell と `sw.js` は保護外の公開とし、PWA の更新が Access に阻害されないようにする。
+   セッション切れは app 側が Access のリダイレクトを `opaqueredirect` として検知し、
+   `/api/auth/return` 経由の再ログインへ誘導する。
 4. Identity provider の追加: **Google**
    （未設定の場合は Zero Trust → **Integrations** → **Identity providers** → **Add new identity provider** → Google で OAuth クライアントを先に登録）
 5. Access policy を 1 件追加:
