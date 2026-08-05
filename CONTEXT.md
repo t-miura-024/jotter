@@ -17,16 +17,20 @@ draft Issue が実際に作成されるリポジトリ。内部 repo（`t-miura-
 _Avoid_: selected repo
 
 **note inbox**:
-`t-miura-024/note`。外部 repo 指定・repo 未指定の draft Issue を受け取る固定の集約先。
-_Avoid_: inbox
+`t-miura-024/note`。外部 repo 由来の draft Issue を受け取り、外部 repo 入力がない jot も直接起票できる既定の target repo。
+_Avoid_: inbox, unspecified repo
 
 **external label**:
-note inbox に起票された Issue の由来を示す label。`external/{owner}-{name}`（外部 repo 指定）または `external/others`（repo 未指定）。
+note inbox に起票された Issue の外部 repo 由来を示す label。外部 repo が明示された場合のみ `external/{owner}-{name}` を付与する。`external/others` は新規付与しない。
 _Avoid_: source label
 
 **plan list**:
 メイン画面。選択された repo のアクティブな計画 Issue を GitHub Project の Status 別にグルーピングして表示する。
 _Avoid_: dashboard, board
+
+**repo sidebar**:
+内部 repo の選択と Status 別 Issue 件数の確認を行う plan list のナビゲーション。PC では固定左サイドバー、モバイルではドロワーとして表示する。
+_Avoid_: repo selector, dropdown
 
 **unregistered**:
 `kind/plan` label を持ち open だが、GitHub Project に登録されていない計画 Issue のグループ。起票時の Project 連携は best-effort のため存在しうる。

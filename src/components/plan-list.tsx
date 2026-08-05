@@ -1,42 +1,6 @@
-import { CircleCheck, CircleQuestionMark, Hammer, Sparkles, Sprout } from "lucide-react";
-
 import type { PlanItem, PlanStatus } from "@/lib/plans";
+import { PLAN_GROUP_ORDER, PLAN_STATUS_META } from "@/lib/plan-status";
 import { cn } from "@/lib/utils";
-
-/** Status 別 5 グループの表示順（ライフサイクル順 + 未登録）。 */
-export const PLAN_GROUP_ORDER: PlanStatus[] = [
-  "draft",
-  "refined",
-  "in-progress",
-  "done",
-  "unregistered",
-];
-
-const GROUP_LABEL: Record<PlanStatus, string> = {
-  draft: "draft",
-  refined: "refined",
-  "in-progress": "in-progress",
-  done: "done",
-  unregistered: "未登録",
-};
-
-/** 見出しの視認性向上用。ライフサイクルの進行を直感的に示す。 */
-const GROUP_ICON: Record<PlanStatus, typeof Sprout> = {
-  draft: Sprout,
-  refined: Sparkles,
-  "in-progress": Hammer,
-  done: CircleCheck,
-  unregistered: CircleQuestionMark,
-};
-
-/** アイコンの Status 別カラー。light/dark 両方で読める落ち着いた色を選ぶ。 */
-const GROUP_ICON_CLASS: Record<PlanStatus, string> = {
-  draft: "text-teal-600 dark:text-teal-400",
-  refined: "text-violet-600 dark:text-violet-400",
-  "in-progress": "text-amber-600 dark:text-amber-500",
-  done: "text-green-600 dark:text-green-400",
-  unregistered: "text-rose-500 dark:text-rose-400",
-};
 
 type PlanListProps = {
   plans: PlanItem[];
@@ -47,6 +11,7 @@ type PlanListProps = {
  * 計画一覧の Status 別グルーピング表示。
  * 5 グループ（draft / refined / in-progress / done / 未登録）を常に描画し、
  * 空グループは「なし」と表示する。
+ * 表示定義（順序・アイコン・色）は repo sidebar と共有する（lib/plan-status）。
  */
 export function PlanList({ plans, onSelect }: PlanListProps) {
   const grouped = new Map<PlanStatus, PlanItem[]>(
@@ -62,12 +27,12 @@ export function PlanList({ plans, onSelect }: PlanListProps) {
     <div className="flex flex-col gap-5">
       {PLAN_GROUP_ORDER.map((status) => {
         const items = grouped.get(status)!;
-        const Icon = GROUP_ICON[status];
+        const { Icon, iconClass, label } = PLAN_STATUS_META[status];
         return (
           <section key={status} className="flex flex-col gap-1.5">
             <h2 className="flex items-center gap-1.5 px-0.5 text-xs font-semibold text-muted-foreground">
-              <Icon aria-hidden className={cn("size-3.5 shrink-0", GROUP_ICON_CLASS[status])} />
-              <span className="font-mono uppercase tracking-wide">{GROUP_LABEL[status]}</span>
+              <Icon aria-hidden className={cn("size-3.5 shrink-0", iconClass)} />
+              <span className="font-mono uppercase tracking-wide">{label}</span>
               <span className="font-mono text-[11px] tabular-nums">{items.length}</span>
             </h2>
             {items.length === 0 ? (

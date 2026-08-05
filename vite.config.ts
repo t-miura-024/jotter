@@ -68,6 +68,8 @@ export default defineConfig({
   },
   test: {
     environment: "node",
-    include: ["functions/**/*.test.ts"],
+    // サーバー側は node 環境、クライアント側は各テストファイル冒頭の
+    // `@vitest-environment happy-dom` コメントで DOM 環境を選択する。
+    include: ["functions/**/*.test.ts", "src/**/*.test.ts", "src/**/*.test.tsx"],
   },
 });

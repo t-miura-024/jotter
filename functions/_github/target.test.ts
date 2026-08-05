@@ -1,22 +1,37 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  EXTERNAL_OTHERS_LABEL,
   INTERNAL_OWNER,
   NOTE_INBOX,
   determineTarget,
+  isNoteInbox,
   parseRepoRef,
 } from "./target";
 
-describe("determineTarget", () => {
-  it("内部 repo（owner == INTERNAL_OWNER）→ その repo に直接起票、external label なし", () => {
-    const result = determineTarget({ owner: "t-miura-024", name: "tools" });
+describe("determineTarget（新 semantics: repo 選択 + 外部 repo 入力の分離）", () => {
+  it("内部 repo 選択 → その repo に直接起票、external label なし", () => {
+    const result = determineTarget({ owner: "t-miura-024", name: "tools" }, null);
     expect(result.repo).toEqual({ owner: "t-miura-024", name: "tools" });
     expect(result.externalLabel).toBeNull();
   });
 
-  it("外部 repo（owner != INTERNAL_OWNER）→ note inbox に起票、external/{owner}-{name} label", () => {
-    const result = determineTarget({ owner: "other-org", name: "some-repo" });
+  it("内部 repo（note inbox 以外）選択 + 外部 repo 入力 → external label は付かない", () => {
+    const result = determineTarget(
+      { owner: "t-miura-024", name: "tools" },
+      { owner: "other-org", name: "some-repo" },
+    );
+    expect(result.repo).toEqual({ owner: "t-miura-024", name: "tools" });
+    expect(result.externalLabel).toBeNull();
+  });
+
+  it("repo 未指定（null）→ note inbox に起票、外部 repo 入力がなければ label なし", () => {
+    const result = determineTarget(null, null);
+    expect(result.repo).toEqual(NOTE_INBOX);
+    expect(result.externalLabel).toBeNull();
+  });
+
+  it("note inbox 選択 + 外部 repo 入力 → note inbox に external/{owner}-{name} label 付きで起票", () => {
+    const result = determineTarget(NOTE_INBOX, { owner: "other-org", name: "some-repo" });
     expect(result.repo).toEqual(NOTE_INBOX);
     expect(result.externalLabel).toEqual({
       name: "external/other-org-some-repo",
@@ -25,18 +40,26 @@ describe("determineTarget", () => {
     });
   });
 
-  it("repo 未指定（null）→ note inbox に起票、external/others label", () => {
-    const result = determineTarget(null);
-    expect(result.repo).toEqual(NOTE_INBOX);
-    expect(result.externalLabel).toEqual(EXTERNAL_OTHERS_LABEL);
-  });
-
   it("INTERNAL_OWNER 定数が t-miura-024 である", () => {
     expect(INTERNAL_OWNER).toBe("t-miura-024");
   });
 
   it("NOTE_INBOX が t-miura-024/note である", () => {
     expect(NOTE_INBOX).toEqual({ owner: "t-miura-024", name: "note" });
+  });
+});
+
+describe("isNoteInbox", () => {
+  it("t-miura-024/note を note inbox と判定する", () => {
+    expect(isNoteInbox({ owner: "t-miura-024", name: "note" })).toBe(true);
+  });
+
+  it("note inbox 以外の内部 repo は false", () => {
+    expect(isNoteInbox({ owner: "t-miura-024", name: "tools" })).toBe(false);
+  });
+
+  it("外部 repo は false", () => {
+    expect(isNoteInbox({ owner: "other-org", name: "note" })).toBe(false);
   });
 });
 
