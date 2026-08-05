@@ -52,22 +52,18 @@ describe("RepoSidebar（PC 固定左 sidebar）", () => {
   it("内部 repo だけを note inbox 先頭 + アルファベット順で並べる", () => {
     render(<RepoSidebar {...baseProps()} />);
 
-    const buttons = screen.getAllByRole("button", { name: /t-miura-024\// });
-    const fullNames = buttons.map((button) =>
-      within(button).getByText(/t-miura-024\//).textContent,
+    const buttons = screen.getAllByRole("button", { name: /^(note|alpha|tools)/ });
+    const names = buttons.map((button) =>
+      within(button).getByText(/^(note|alpha|tools)/).textContent,
     );
-    expect(fullNames).toEqual([
-      "t-miura-024/note",
-      "t-miura-024/alpha",
-      "t-miura-024/tools",
-    ]);
+    expect(names).toEqual(["note", "alpha", "tools"]);
   });
 
   it("repo 行全体が選択可能で、クリックで onSelect に fullName を渡す", () => {
     const onSelect = vi.fn();
     render(<RepoSidebar {...baseProps({ onSelect })} />);
 
-    const tools = screen.getByRole("button", { name: /t-miura-024\/tools/ });
+    const tools = screen.getByRole("button", { name: /^tools/ });
     fireEvent.click(tools);
 
     expect(onSelect).toHaveBeenCalledWith("t-miura-024/tools");
@@ -76,16 +72,16 @@ describe("RepoSidebar（PC 固定左 sidebar）", () => {
   it("選択中の repo 行に aria-current を付ける", () => {
     render(<RepoSidebar {...baseProps({ selected: "t-miura-024/tools" })} />);
 
-    const tools = screen.getByRole("button", { name: /t-miura-024\/tools/ });
+    const tools = screen.getByRole("button", { name: /^tools/ });
     expect(tools.getAttribute("aria-current")).toBe("true");
-    const note = screen.getByRole("button", { name: /t-miura-024\/note/ });
+    const note = screen.getByRole("button", { name: /^note/ });
     expect(note.getAttribute("aria-current")).toBeNull();
   });
 
   it("5 件数を PlanList と同じ順序・アイコンで表示し、0 件は薄い色で判別できる", () => {
     const { container } = render(<RepoSidebar {...baseProps()} />);
 
-    const note = screen.getByRole("button", { name: /t-miura-024\/note/ });
+    const note = screen.getByRole("button", { name: /^note/ });
     expect(within(note).getByText("2")).toBeTruthy();
     expect(within(note).getByText("1")).toBeTruthy();
     expect(within(note).getByText("3")).toBeTruthy();
@@ -130,7 +126,7 @@ describe("MobileRepoButton / RepoDrawer（モバイル drawer）", () => {
     render(<MobileRepoButton selected="t-miura-024/note" reposLoading={false} onClick={onClick} />);
 
     const button = screen.getByRole("button", { name: "リポジトリを選択" });
-    expect(within(button).getByText("t-miura-024/note")).toBeTruthy();
+    expect(within(button).getByText("note")).toBeTruthy();
     fireEvent.click(button);
     expect(onClick).toHaveBeenCalledTimes(1);
   });
@@ -147,7 +143,7 @@ describe("MobileRepoButton / RepoDrawer（モバイル drawer）", () => {
     );
 
     // drawer 内の repo 行（閉じるボタン・見出しを除外）
-    const tools = screen.getByRole("button", { name: /t-miura-024\/tools/ });
+    const tools = screen.getByRole("button", { name: /^tools/ });
     fireEvent.click(tools);
 
     expect(onSelect).toHaveBeenCalledWith("t-miura-024/tools");
