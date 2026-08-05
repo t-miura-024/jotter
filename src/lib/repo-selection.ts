@@ -78,6 +78,12 @@ export type RepoNavEntry = {
   fullName: string;
 };
 
+/** sidebar / drawer の表示用 repo 名（内部 repo は owner を省略して repo 名だけにする）。 */
+export function displayRepoName(fullName: string): string {
+  const ref = parseRepoRef(fullName);
+  return ref?.name ?? fullName;
+}
+
 /**
  * sidebar / drawer に並べる repo の順序: note inbox を必ず先頭へ置き、
  * 残りをアルファベット順（fullName 昇順）にする。

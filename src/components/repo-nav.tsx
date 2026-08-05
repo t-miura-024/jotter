@@ -3,7 +3,7 @@ import { LoaderCircle, Menu, RefreshCw, X } from "lucide-react";
 import { PLAN_GROUP_ORDER, PLAN_STATUS_META } from "@/lib/plan-status";
 import type { RepoStatsEntry } from "@/lib/repo-stats";
 import { NOTE_INBOX } from "@/lib/target";
-import { orderReposForNav, type RepoNavEntry } from "@/lib/repo-selection";
+import { displayRepoName, orderReposForNav, type RepoNavEntry } from "@/lib/repo-selection";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -106,7 +106,7 @@ function RepoNavContent({
               >
                 <span className="flex items-center justify-between gap-2">
                   <span className="min-w-0 truncate font-mono text-xs font-medium">
-                    {repo.fullName}
+                    {repo.name}
                   </span>
                   {repo.fullName === NOTE_INBOX && (
                     <span className="shrink-0 rounded-full bg-primary/10 px-1.5 py-px text-[10px] text-primary">
@@ -164,7 +164,7 @@ export function MobileRepoButton({
     >
       <span className="flex min-w-0 items-center gap-2">
         <Menu aria-hidden className="size-4 shrink-0" />
-        <span className="truncate font-mono text-sm">{selected || NOTE_INBOX}</span>
+        <span className="truncate font-mono text-sm">{displayRepoName(selected || NOTE_INBOX)}</span>
       </span>
       {reposLoading && (
         <LoaderCircle aria-hidden className="size-4 shrink-0 animate-spin text-muted-foreground" />
