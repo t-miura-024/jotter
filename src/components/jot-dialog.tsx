@@ -14,10 +14,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { SubmitOverlay, type SubmitStage } from "@/components/submit-overlay";
 import { Textarea } from "@/components/ui/textarea";
 import type { SubmitResult } from "@/components/result-dialog";
-import { describeJotTarget } from "@/lib/target";
+import { NOTE_INBOX, describeJotTarget, validateExternalRepo } from "@/lib/target";
 
 type SubmitState =
   | { status: "idle" }
@@ -46,7 +47,7 @@ function parseSseEvents(text: string): Array<{ event: string; data: Record<strin
 type JotDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** 上部プルダウンの選択値（"owner/name" 形式 or 空）。起票先はこれに連動する。 */
+  /** 選択中の内部 repo（"owner/name" 形式）。空なら note inbox として扱う。 */
   repo: string;
   /** 起票成功時に結果を渡す（親が ResultDialog 表示・一覧再取得を行う）。 */
   onSuccess: (result: SubmitResult) => void;
@@ -54,10 +55,17 @@ type JotDialogProps = {
 
 /**
  * Jot モーダル。下部固定ボタンから開き、走り書きを送信して draft 計画 Issue を起票する。
- * 起票先表示・モデル選択プルダウン・テキストエリアを持ち、参照のみ（編集機能なし）。
+ *
+ * - note inbox 選択時だけ外部 repo 入力欄を表示する。外部 repo 入力は target repo と
+ *   解釈せず、note inbox への external/{owner}-{name} label 付与だけを決める（ADR 0010）。
+ * - 外部 repo 入力はモーダルを閉じても保持され、起票成功時に jot 本文とともに消去される。
+ *   失敗時は両方が保持され、再送信できる。
+ * - 外部 repo 入力はクライアントでも検証し、エラー時は LLM 呼び出しを開始しない
+ *   （サーバー側でも検証し、迂回した不正リクエストには 4xx を返す）。
  */
 export function JotDialog({ open, onOpenChange, repo, onSuccess }: JotDialogProps) {
   const [jot, setJot] = useState("");
+  const [externalRepo, setExternalRepo] = useState("");
   const [preferredModel, setPreferredModel] = useState<string>(DEFAULT_MODEL);
   const [state, setState] = useState<SubmitState>({ status: "idle" });
   // done 受信後もオーバーレイの成功シーケンス（飛び立ち＋合図）を完走させてから
@@ -67,10 +75,22 @@ export function JotDialog({ open, onOpenChange, repo, onSuccess }: JotDialogProp
 
   const submitting = state.status === "submitting";
   const canSubmit = jot.trim().length > 0 && !submitting;
-  const target = describeJotTarget(repo);
+
+  const isNoteInbox = repo.trim() === "" || repo.trim() === NOTE_INBOX;
+  // 外部 repo 入力は note inbox のときだけ意味を持つ（他の内部 repo では無視される）。
+  const externalValidation =
+    isNoteInbox && externalRepo.trim() !== ""
+      ? validateExternalRepo(externalRepo)
+      : { ok: true as const, repo: null };
+  const externalError = externalValidation.ok ? null : externalValidation.error;
+
+  const target = describeJotTarget(repo, isNoteInbox ? externalRepo : "");
 
   async function submit(): Promise<void> {
     if (!canSubmit) return;
+    // クライアント検証: 不正な外部 repo 入力では送信しない（LLM・GitHub API を呼ばない）。
+    if (!externalValidation.ok) return;
+
     setPendingResult(null);
     setSubmitDone(false);
     setState({ status: "submitting", stage: "formatting" });
@@ -78,7 +98,12 @@ export function JotDialog({ open, onOpenChange, repo, onSuccess }: JotDialogProp
       const response = await apiFetch("/api/submit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ jot, repo, preferredModel }),
+        body: JSON.stringify({
+          jot,
+          repo,
+          externalRepo: isNoteInbox ? externalRepo.trim() : "",
+          preferredModel,
+        }),
       });
 
       if (!response.ok) {
@@ -127,7 +152,9 @@ export function JotDialog({ open, onOpenChange, repo, onSuccess }: JotDialogProp
   /** オーバーレイの成功シーケンス完走: 状態を片付けてから結果を親に渡す。 */
   function handleOverlayFinished(): void {
     const result = pendingResult;
+    // 起票成功時は jot 本文と外部 repo 入力の両方を消去する。
     setJot("");
+    setExternalRepo("");
     setPendingResult(null);
     setSubmitDone(false);
     setState({ status: "idle" });
@@ -167,6 +194,29 @@ export function JotDialog({ open, onOpenChange, repo, onSuccess }: JotDialogProp
           </p>
 
           <ModelSelector value={preferredModel} onChange={setPreferredModel} disabled={submitting} />
+
+          {isNoteInbox && (
+            <div className="flex flex-col gap-1">
+              <label htmlFor="external-repo" className="text-xs text-muted-foreground">
+                外部 repo（任意）— 入力すると <span className="font-mono">external/owner-name</span>{" "}
+                label 付きで note inbox に起票
+              </label>
+              <Input
+                id="external-repo"
+                aria-label="外部 repo（owner/name 形式）"
+                placeholder="owner/name"
+                value={externalRepo}
+                onChange={(event) => setExternalRepo(event.target.value)}
+                disabled={submitting}
+                aria-invalid={externalError ? true : undefined}
+              />
+              {externalError && (
+                <p role="alert" className="text-xs text-destructive">
+                  {externalError}
+                </p>
+              )}
+            </div>
+          )}
 
           <Textarea
             autoFocus
@@ -238,7 +288,11 @@ export function JotDialog({ open, onOpenChange, repo, onSuccess }: JotDialogProp
             <p className="text-xs text-muted-foreground">
               ⌘ / Ctrl + Enter で送信 · <span className="font-mono">kind/plan</span> label
             </p>
-            <Button size="lg" disabled={!canSubmit} onClick={() => void submit()}>
+            <Button
+              size="lg"
+              disabled={!canSubmit || externalError !== null}
+              onClick={() => void submit()}
+            >
               {submitting ? (
                 <LoaderCircle aria-hidden className="animate-spin" />
               ) : (

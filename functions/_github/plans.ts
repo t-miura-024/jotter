@@ -34,21 +34,37 @@ type RestIssue = {
 };
 
 /**
- * open な kind/plan Issue を REST で一覧取得する。
+ * open な kind/plan Issue を REST で全ページ取得する。
  * issues エンドポイントには PR が混入するため除外する。
- * ページネーションは実装しない（per_page=100 の先頭ページのみ、個人ツール規模）。
+ * ページネーション: per_page=100 のまま page を 1 から順に辿り、
+ * Link header の rel="next" がなくなるまで全ページを取得する
+ * （repo stats の集計を正確にするため、先頭ページのみに留めない）。
+ * 呼び出し側（listPlans / fetchRepoStats）はページ数を意識せず全件を受け取る。
  */
 export async function listOpenPlanIssues(client: GitHubClient, repo: RepoRef): Promise<RestIssue[]> {
-  const path =
-    `/repos/${repo.owner}/${repo.name}/issues` +
-    `?labels=${encodeURIComponent("kind/plan")}&state=open&per_page=100`;
-  const response = await client.request(path);
-  if (!response.ok) {
-    throw await toGitHubError(response, "計画一覧の取得に失敗しました");
-  }
+  const issues: RestIssue[] = [];
+  for (let page = 1; ; page += 1) {
+    const path =
+      `/repos/${repo.owner}/${repo.name}/issues` +
+      `?labels=${encodeURIComponent("kind/plan")}&state=open&per_page=100&page=${page}`;
+    const response = await client.request(path);
+    if (!response.ok) {
+      throw await toGitHubError(response, "計画一覧の取得に失敗しました");
+    }
 
-  const issues = (await response.json()) as RestIssue[];
-  return issues.filter((issue) => issue.pull_request === undefined);
+    const pageIssues = (await response.json()) as RestIssue[];
+    issues.push(...pageIssues.filter((issue) => issue.pull_request === undefined));
+
+    if (!hasNextLink(response)) break;
+  }
+  return issues;
+}
+
+/** GitHub REST の Link header に rel="next" が含まれるか判定する（ページネーションの終端判定）。 */
+function hasNextLink(response: Response): boolean {
+  const link = response.headers.get("link");
+  if (!link) return false;
+  return link.split(",").some((part) => /;\s*rel="?next"?/.test(part));
 }
 
 /**

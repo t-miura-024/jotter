@@ -5,10 +5,14 @@ import { listOpenPlanIssues, listPlans, normalizePlanStatus } from "./plans";
 
 const REPO = { owner: "t-miura-024", name: "note" };
 
-const jsonResponse = (body: unknown, status = 200): Response =>
+const jsonResponse = (
+  body: unknown,
+  status = 200,
+  headers: Record<string, string> = {},
+): Response =>
   new Response(JSON.stringify(body), {
     status,
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...headers },
   });
 
 const graphqlOk = (data: unknown): Response => jsonResponse({ data });
@@ -43,8 +47,44 @@ describe("listOpenPlanIssues", () => {
 
     expect(issues).toHaveLength(1);
     expect(String(fetchMock.mock.calls[0][0])).toBe(
-      "https://api.github.com/repos/t-miura-024/note/issues?labels=kind%2Fplan&state=open&per_page=100",
+      "https://api.github.com/repos/t-miura-024/note/issues?labels=kind%2Fplan&state=open&per_page=100&page=1",
     );
+    // Link header がなければ 1 ページで終了する。
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("Link header の rel=next を辿って全ページを連結する", async () => {
+    const fetchMock = vi.fn<typeof fetch>();
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse([restIssue({ number: 1 }), restIssue({ number: 2 })], 200, {
+        Link: '<https://api.github.com/repos/t-miura-024/note/issues?page=2>; rel="next", <https://api.github.com/repos/t-miura-024/note/issues?page=2>; rel="last"',
+      }),
+    );
+    fetchMock.mockResolvedValueOnce(jsonResponse([restIssue({ number: 3 })]));
+    const client = new GitHubClient({ token: "test-token", fetch: fetchMock });
+
+    const issues = await listOpenPlanIssues(client, REPO);
+
+    expect(issues.map((issue) => issue.number)).toEqual([1, 2, 3]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(String(fetchMock.mock.calls[1][0])).toContain("page=2");
+  });
+
+  it("PR 除外は取得した全ページに適用される", async () => {
+    const fetchMock = vi.fn<typeof fetch>();
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse([restIssue({ number: 1 })], 200, {
+        Link: '<https://api.github.com/repos/t-miura-024/note/issues?page=2>; rel="next"',
+      }),
+    );
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse([restIssue({ number: 2, pull_request: { url: "x" } }), restIssue({ number: 3 })]),
+    );
+    const client = new GitHubClient({ token: "test-token", fetch: fetchMock });
+
+    const issues = await listOpenPlanIssues(client, REPO);
+
+    expect(issues.map((issue) => issue.number)).toEqual([1, 3]);
   });
 
   it("PR（pull_request フィールド持ち）を除外する", async () => {
@@ -68,6 +108,22 @@ describe("listOpenPlanIssues", () => {
     await expect(listOpenPlanIssues(client, REPO)).rejects.toThrow(
       "計画一覧の取得に失敗しました: Not Found",
     );
+  });
+
+  it("2 ページ目以降の失敗も GitHubError として伝播する", async () => {
+    const fetchMock = vi.fn<typeof fetch>();
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse([restIssue({ number: 1 })], 200, {
+        Link: '<https://api.github.com/repos/t-miura-024/note/issues?page=2>; rel="next"',
+      }),
+    );
+    fetchMock.mockResolvedValueOnce(jsonResponse({ message: "Rate limit exceeded" }, 403));
+    const client = new GitHubClient({ token: "test-token", fetch: fetchMock });
+
+    const failure = listOpenPlanIssues(client, REPO);
+    await expect(failure).rejects.toThrow(GitHubError);
+    await expect(failure).rejects.toThrow("計画一覧の取得に失敗しました: Rate limit exceeded");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });
 

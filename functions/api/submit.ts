@@ -1,14 +1,18 @@
 import { GitHubClient } from "../_github/client";
+import { validateExternalRepo } from "../_github/external-repo";
 import { addIssueToProject, type ProjectConfig } from "../_github/project";
 import { submitDraft } from "../_github/submit-draft";
-import { determineTarget, parseRepoRef } from "../_github/target";
+import { INTERNAL_OWNER, determineTarget, parseRepoRef } from "../_github/target";
 import { formatJot } from "../_lib/gemini";
 import type { Env } from "../_types";
 
 type SubmitRequestBody = {
   jot?: unknown;
   preferredModel?: unknown;
+  /** 選択中の内部 repo（"owner/name"）。note inbox なら外部 repo 入力が意味を持つ。 */
   repo?: unknown;
+  /** 外部 repo 入力（note inbox 選択時のみ。target repo と解釈しない）。 */
+  externalRepo?: unknown;
 };
 
 const json = (data: unknown, status = 200): Response =>
@@ -34,9 +38,11 @@ function sseResponse(stream: ReadableStream): Response {
 /**
  * POST /api/submit — jot を受け取り、Gemini で整形して draft 計画 Issue を起票する。
  *
- * SSE（Server-Sent Events）で段階的に進捗を通知する:
- *   formatting → creating → done（結果 JSON）/ error
- * バリデーションエラー（4xx/5xx）は SSE に乗せず通常の JSON で返す。
+ * 新 semantics（ADR 0010）:
+ * - repo は選択中の内部 repo。外部 repo 指定や未指定の自由入力は受け付けない。
+ * - externalRepo は note inbox 選択時にだけ意味を持つ外部由来情報で、
+ *   target repo と解釈しない。検証は LLM・GitHub API 呼び出しより先に完了させる。
+ * - 検証エラー（4xx）は SSE に乗せず通常の JSON で返す。
  */
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   let payload: SubmitRequestBody;
@@ -58,12 +64,24 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     return json({ error: "サーバー設定エラー: GEMINI_API_KEY が設定されていません" }, 500);
   }
 
-  const preferredModel =
-    typeof payload.preferredModel === "string" ? payload.preferredModel : undefined;
-
+  // ---- 起票先・外部 repo の検証（LLM 呼び出しより先に完了させる）----
   const repoInput = typeof payload.repo === "string" ? payload.repo : "";
   const selectedRepo = parseRepoRef(repoInput);
-  const target = determineTarget(selectedRepo);
+  if (selectedRepo && selectedRepo.owner !== INTERNAL_OWNER) {
+    return json({ error: "repo には内部 repo（t-miura-024/*）のみ指定できます" }, 400);
+  }
+
+  const externalInput =
+    typeof payload.externalRepo === "string" ? payload.externalRepo.trim() : "";
+  const externalValidation = validateExternalRepo(externalInput);
+  if (!externalValidation.ok) {
+    return json({ error: externalValidation.error }, 400);
+  }
+
+  const target = determineTarget(selectedRepo, externalValidation.repo);
+
+  const preferredModel =
+    typeof payload.preferredModel === "string" ? payload.preferredModel : undefined;
 
   const encoder = new TextEncoder();
   const stream = new ReadableStream({

@@ -53,7 +53,7 @@ pnpm dev         # http://localhost:5173（/api/* は localhost:8788 へプロ�
 
 - LLM 整形: Gemini が jot からタイトルを抽出し、本文を読みやすい Markdown へ清書します（[ADR 0007](docs/adr/0007-faithful-llm-formatting.md)。忠実な記録のみで、内容の改変・肉付けはしない）
 - モデル: 優先モデル（GUI セレクタで選択）を試し、失敗時は自動的に別モデルへフォールバック（[ADR 0005](docs/adr/0005-gemini-speed-first-fallback.md)）。結果の `modelUsed` / `fallbackOccurred` を UI に表示します
-- target ルーティング: `t-miura-024/*` 指定 → その repo に直接起票。外部 repo 指定または未指定 → note inbox（`t-miura-024/note`）に集約し、由来を示す `external/{owner}-{name}`（または `external/others`）label を付与
+- target ルーティング: 選択中の内部 repo（`t-miura-024/*`）へ直接起票。note inbox 選択時（既定）は note inbox（`t-miura-024/note`）へ起票し、外部 repo 入力があるときだけ由来を示す `external/{owner}-{name}` label を付与（`external/others` は新規付与しない）。外部 repo 入力は note inbox 選択時の JotDialog に限定され、外部 repo の plan list 閲覧はしない
 - label: `kind/plan` を冪等に確保（`gh label create --force` 相当）して付与
 - Project 連携: 3 つの Project secret がすべて設定されている場合、起票後に ProjectV2 へ item 追加 + Status=draft を設定。best-effort で、失敗しても起票は成功として扱い `projectAdded: false` を UI に表示します
 

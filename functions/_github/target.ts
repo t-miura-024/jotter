@@ -3,48 +3,46 @@ import type { LabelSpec, RepoRef } from "./labels";
 /** 内部 repo の owner（draft.rs の config_owner 相当）。 */
 export const INTERNAL_OWNER = "t-miura-024";
 
-/** note inbox（外部 repo 指定・repo 未指定の draft Issue を受け取る固定の集約先）。 */
+/** note inbox（外部 repo 由来の draft Issue を受け取る固定の集約先、既定の target repo）。 */
 export const NOTE_INBOX: RepoRef = { owner: INTERNAL_OWNER, name: "note" };
 
 /** external label の共通カラー（draft.rs ensure_labels 由来）。 */
 const EXTERNAL_LABEL_COLOR = "BFD4F2";
 
-/** repo 未指定時に付与する external label。 */
-export const EXTERNAL_OTHERS_LABEL: LabelSpec = {
-  name: "external/others",
-  color: EXTERNAL_LABEL_COLOR,
-  description: "External repo: unspecified",
-};
-
 /**
- * 起票先（target repo）と label を決定する（draft.rs determine_target の移植）。
+ * 起票先（target repo）と label を決定する（新 semantics、ADR 0010）。
  *
- * - 内部 repo（owner == INTERNAL_OWNER）→ その repo に直接起票。label は kind/plan のみ。
- * - 外部 repo（owner != INTERNAL_OWNER）→ note inbox に起票。label は kind/plan + external/{owner}-{name}。
- * - repo 未指定（null）→ note inbox に起票。label は kind/plan + external/others。
+ * - repo 未指定（null）→ note inbox に起票。外部 repo 入力がなければ label なし。
+ * - 内部 repo 選択 → その repo に直接起票。external label は note inbox のときだけ意味を持つ。
+ * - 外部 repo 入力 → note inbox に起票し external/{owner}-{name} を付与。
+ *   external/others は新規付与しない（既存 Issue の label は変更しない）。
  */
 export type TargetResult = {
   /** draft Issue を作成する target repo。 */
   repo: RepoRef;
-  /** external label（外部 repo 指定 or 未指定の場合）。内部 repo の場合は null。 */
+  /** external label（note inbox + 外部 repo 入力がある場合のみ）。それ以外は null。 */
   externalLabel: LabelSpec | null;
 };
 
-export function determineTarget(selected: RepoRef | null): TargetResult {
-  if (selected === null) {
-    return { repo: NOTE_INBOX, externalLabel: EXTERNAL_OTHERS_LABEL };
-  }
+/** repo が note inbox（t-miura-024/note）であるかを判定する。 */
+export function isNoteInbox(repo: RepoRef): boolean {
+  return repo.owner === NOTE_INBOX.owner && repo.name === NOTE_INBOX.name;
+}
 
-  if (selected.owner === INTERNAL_OWNER) {
-    return { repo: selected, externalLabel: null };
+export function determineTarget(selected: RepoRef | null, external: RepoRef | null): TargetResult {
+  const repo = selected ?? NOTE_INBOX;
+
+  // 外部 repo 入力は target repo と解釈せず、note inbox 上の外部由来情報としてだけ扱う。
+  if (!external || !isNoteInbox(repo)) {
+    return { repo, externalLabel: null };
   }
 
   return {
-    repo: NOTE_INBOX,
+    repo,
     externalLabel: {
-      name: `external/${selected.owner}-${selected.name}`,
+      name: `external/${external.owner}-${external.name}`,
       color: EXTERNAL_LABEL_COLOR,
-      description: `External repo: ${selected.owner}/${selected.name}`,
+      description: `External repo: ${external.owner}/${external.name}`,
     },
   };
 }
