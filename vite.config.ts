@@ -46,11 +46,10 @@ export default defineConfig({
         globPatterns: ["**/*.{js,css,html,svg,woff2}"],
         // オフラインの SPA ナビゲーションを precache 済み index.html で支える。
         navigateFallback: "index.html",
-        // /api/* は Pages Functions のため SW から完全に除外する（denylist により
-        // ナビゲーションハンドラがマッチせず、そのままネットワークへ通過する）。
-        // また runtimeCaching は一切設定しないため、/api/* の fetch() レスポンスや
-        // Cloudflare Access のログインリダイレクト（cross-origin）はキャッシュされない。
-        navigateFallbackDenylist: [/^\/api\//],
+        // Pages Functions と Cloudflare Access の認証完了処理は SW から完全に除外する
+        // （denylist によりナビゲーションハンドラがマッチせず、そのままネットワークへ通過する）。
+        // また runtimeCaching は一切設定しないため、これらのレスポンスはキャッシュされない。
+        navigateFallbackDenylist: [/^\/api\//, /^\/cdn-cgi\/access\//],
         cleanupOutdatedCaches: true,
       },
     }),
