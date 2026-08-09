@@ -1,0 +1,17 @@
+pre-commit:
+  parallel: true
+  commands:
+    lint:
+      run: pnpm exec oxlint --deny-warnings {staged_files}
+      glob: "*.{ts,tsx,js,jsx,mjs,cjs}"
+    format:
+      run: pnpm exec oxfmt {staged_files}
+      stage_fixed: true
+
+pre-push:
+  parallel: true
+  commands:
+    typecheck:
+      run: pnpm typecheck
+    test:
+      run: pnpm test
