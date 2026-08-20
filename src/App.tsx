@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { CircleAlert, LoaderCircle, PenLine, RefreshCw, RotateCcw } from "lucide-react";
+import { CircleAlert, PenLine, RefreshCw, RotateCcw } from "lucide-react";
 import { motion } from "motion/react";
 
 import { JotDialog } from "@/components/jot-dialog";
 import { PlanDetailDialog } from "@/components/plan-detail-dialog";
 import { PlanList } from "@/components/plan-list";
+import { PlanListSkeleton } from "@/components/plan-list-skeleton";
 import { MobileRepoButton, RepoDrawer, RepoSidebar } from "@/components/repo-nav";
 import { ResultDialog, type SubmitResult } from "@/components/result-dialog";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -13,12 +14,7 @@ import { AuthExpiredPanel } from "@/components/auth-expired-panel";
 import { Button } from "@/components/ui/button";
 import { UpdateToast } from "@/components/update-toast";
 import { AuthExpiredError, apiFetch } from "@/lib/api";
-import {
-  fetchPlans,
-  getCachedPlans,
-  invalidatePlansCache,
-  type PlanItem,
-} from "@/lib/plans";
+import { fetchPlans, getCachedPlans, invalidatePlansCache, type PlanItem } from "@/lib/plans";
 import {
   fetchRepoStats,
   getCachedRepoStats,
@@ -190,6 +186,7 @@ export default function App() {
         repos={repos}
         stats={stats}
         statsLoading={statsLoading}
+        reposLoading={reposState.status === "loading"}
         selected={selectedRepo}
         onSelect={setSelectedRepo}
         onRetryStats={handleRetryStats}
@@ -234,18 +231,16 @@ export default function App() {
           </Button>
         </div>
 
-        {plansState.status === "loading" && (
-          <div className="flex items-center gap-2 rounded-lg border px-4 py-6 text-sm text-muted-foreground">
-            <LoaderCircle aria-hidden className="size-4 animate-spin" />
-            計画一覧を読み込み中…
-          </div>
-        )}
+        {plansState.status === "loading" && <PlanListSkeleton />}
 
         {plansState.status === "error" &&
           (plansState.authExpired ? (
             <AuthExpiredPanel />
           ) : (
-            <div role="alert" className="rounded-lg border border-destructive/25 bg-destructive/5 px-4 py-3">
+            <div
+              role="alert"
+              className="rounded-lg border border-destructive/25 bg-destructive/5 px-4 py-3"
+            >
               <div className="flex items-start gap-2">
                 <CircleAlert aria-hidden className="mt-0.5 size-4 shrink-0 text-destructive" />
                 <div className="min-w-0 flex-1">
@@ -264,9 +259,7 @@ export default function App() {
             </div>
           ))}
 
-        {plansState.status === "ready" && (
-          <PlanList plans={plansState.plans} onSelect={openPlan} />
-        )}
+        {plansState.status === "ready" && <PlanList plans={plansState.plans} onSelect={openPlan} />}
 
         <div className="pointer-events-none fixed inset-x-0 bottom-6 z-40 flex justify-center">
           <MotionButton
@@ -288,6 +281,7 @@ export default function App() {
         repos={repos}
         stats={stats}
         statsLoading={statsLoading}
+        reposLoading={reposState.status === "loading"}
         selected={selectedRepo}
         onSelect={setSelectedRepo}
         onRetryStats={handleRetryStats}
@@ -302,11 +296,7 @@ export default function App() {
         onSuccess={handleJotSuccess}
       />
 
-      <ResultDialog
-        open={resultOpen}
-        onOpenChange={setResultOpen}
-        result={result}
-      />
+      <ResultDialog open={resultOpen} onOpenChange={setResultOpen} result={result} />
 
       <UpdateToast />
     </main>

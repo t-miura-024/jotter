@@ -4,12 +4,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 
-import {
-  MobileRepoButton,
-  RepoDrawer,
-  RepoSidebar,
-  type RepoNavProps,
-} from "./repo-nav";
+import { MobileRepoButton, RepoDrawer, RepoSidebar, type RepoNavProps } from "./repo-nav";
 
 afterEach(() => {
   cleanup();
@@ -53,8 +48,8 @@ describe("RepoSidebar（PC 固定左 sidebar）", () => {
     render(<RepoSidebar {...baseProps()} />);
 
     const buttons = screen.getAllByRole("button", { name: /^(note|alpha|tools)/ });
-    const names = buttons.map((button) =>
-      within(button).getByText(/^(note|alpha|tools)/).textContent,
+    const names = buttons.map(
+      (button) => within(button).getByText(/^(note|alpha|tools)/).textContent,
     );
     expect(names).toEqual(["note", "alpha", "tools"]);
   });
@@ -112,11 +107,16 @@ describe("RepoSidebar（PC 固定左 sidebar）", () => {
     expect(onRetryStats).toHaveBeenCalledTimes(1);
   });
 
-  it("stats 取得中は – ではなく … を表示し、再取得導線は出さない", () => {
-    render(<RepoSidebar {...baseProps({ stats: null, statsLoading: true })} />);
+  it("stats 取得中はスケルトンを表示し、– や再取得導線は出さない", () => {
+    const { container } = render(
+      <RepoSidebar {...baseProps({ stats: null, statsLoading: true })} />,
+    );
 
-    expect(screen.getAllByText("…").length).toBe(REPOS.length);
+    expect(screen.queryByText("–")).toBeNull();
+    expect(screen.queryByText("…")).toBeNull();
     expect(screen.queryByRole("button", { name: "件数を再取得" })).toBeNull();
+    // スケルトン（animate-pulse）が各 repo 行に表示される
+    expect(container.querySelectorAll(".animate-pulse").length).toBeGreaterThan(0);
   });
 });
 
@@ -134,13 +134,7 @@ describe("MobileRepoButton / RepoDrawer（モバイル drawer）", () => {
   it("drawer を開くと内部 repo が並び、repo 選択後に自動で閉じる", () => {
     const onSelect = vi.fn();
     const onOpenChange = vi.fn();
-    render(
-      <RepoDrawer
-        {...baseProps({ onSelect })}
-        open={true}
-        onOpenChange={onOpenChange}
-      />,
-    );
+    render(<RepoDrawer {...baseProps({ onSelect })} open={true} onOpenChange={onOpenChange} />);
 
     // drawer 内の repo 行（閉じるボタン・見出しを除外）
     const tools = screen.getByRole("button", { name: /^tools/ });
@@ -153,13 +147,7 @@ describe("MobileRepoButton / RepoDrawer（モバイル drawer）", () => {
 
   it("drawer の閉じるボタンで閉じられる", () => {
     const onOpenChange = vi.fn();
-    render(
-      <RepoDrawer
-        {...baseProps()}
-        open={true}
-        onOpenChange={onOpenChange}
-      />,
-    );
+    render(<RepoDrawer {...baseProps()} open={true} onOpenChange={onOpenChange} />);
 
     fireEvent.click(screen.getByRole("button", { name: "ドロワーを閉じる" }));
     expect(onOpenChange).toHaveBeenCalledWith(false);
