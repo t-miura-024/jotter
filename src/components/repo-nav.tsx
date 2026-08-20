@@ -1,4 +1,4 @@
-import { LoaderCircle, Menu, RefreshCw, X } from "lucide-react";
+import { Menu, RefreshCw, X } from "lucide-react";
 
 import { PLAN_GROUP_ORDER, PLAN_STATUS_META } from "@/lib/plan-status";
 import type { RepoStatsEntry } from "@/lib/repo-stats";
@@ -6,11 +6,8 @@ import { NOTE_INBOX } from "@/lib/target";
 import { displayRepoName, orderReposForNav, type RepoNavEntry } from "@/lib/repo-selection";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { RepoNavSkeleton, RepoStatsSkeleton } from "@/components/repo-nav-skeleton";
 
 /**
  * repo sidebar / mobile drawer の共通ナビゲーション（ADR 0010）。
@@ -27,8 +24,10 @@ export type RepoNavProps = {
   repos: RepoNavEntry[];
   /** repo stats（null = 未取得または取得失敗 → 件数を – で表示）。 */
   stats: RepoStatsEntry[] | null;
-  /** stats 取得中かどうか（取得中は – の代わりに … を表示）。 */
+  /** stats 取得中かどうか（取得中はスケルトンを表示）。 */
   statsLoading: boolean;
+  /** repos 取得中かどうか（取得中は repo 一覧をスケルトンで表示）。 */
+  reposLoading?: boolean;
   /** 選択中の内部 repo fullName。 */
   selected: string;
   onSelect: (fullName: string) => void;
@@ -64,12 +63,17 @@ function RepoNavContent({
   repos,
   stats,
   statsLoading,
+  reposLoading = false,
   selected,
   onSelect,
   onRetryStats,
 }: RepoNavProps) {
   const ordered = orderReposForNav(repos);
   const statsFailed = stats === null && !statsLoading;
+
+  if (reposLoading) {
+    return <RepoNavSkeleton />;
+  }
 
   return (
     <nav aria-label="リポジトリ選択" className="flex flex-col gap-2">
@@ -99,9 +103,7 @@ function RepoNavContent({
                 aria-current={isSelected ? "true" : undefined}
                 className={cn(
                   "flex w-full flex-col gap-1 rounded-lg px-2 py-1.5 text-left transition-colors",
-                  isSelected
-                    ? "bg-accent text-accent-foreground"
-                    : "hover:bg-accent/60",
+                  isSelected ? "bg-accent text-accent-foreground" : "hover:bg-accent/60",
                 )}
               >
                 <span className="flex items-center justify-between gap-2">
@@ -116,12 +118,11 @@ function RepoNavContent({
                 </span>
                 {entry ? (
                   <StatusCounts counts={entry.counts} />
+                ) : statsLoading ? (
+                  <RepoStatsSkeleton />
                 ) : (
-                  <span
-                    aria-hidden
-                    className="font-mono text-[10px] text-muted-foreground"
-                  >
-                    {statsLoading ? "…" : "–"}
+                  <span aria-hidden className="font-mono text-[10px] text-muted-foreground">
+                    –
                   </span>
                 )}
               </button>
@@ -154,6 +155,22 @@ export function MobileRepoButton({
   reposLoading: boolean;
   onClick: () => void;
 }) {
+  if (reposLoading) {
+    return (
+      <div aria-busy="true" aria-live="polite" className="flex min-w-0 flex-1 md:hidden">
+        <span role="status" className="sr-only">
+          リポジトリ一覧を読み込み中…
+        </span>
+        <div className="flex h-9 w-full items-center justify-between rounded-lg border bg-background px-2.5">
+          <span className="flex min-w-0 items-center gap-2" aria-hidden>
+            <Menu aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+            <span className="h-3 w-20 animate-pulse rounded-md bg-muted motion-reduce:animate-none" />
+          </span>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <Button
       variant="outline"
@@ -164,11 +181,10 @@ export function MobileRepoButton({
     >
       <span className="flex min-w-0 items-center gap-2">
         <Menu aria-hidden className="size-4 shrink-0" />
-        <span className="truncate font-mono text-sm">{displayRepoName(selected || NOTE_INBOX)}</span>
+        <span className="truncate font-mono text-sm">
+          {displayRepoName(selected || NOTE_INBOX)}
+        </span>
       </span>
-      {reposLoading && (
-        <LoaderCircle aria-hidden className="size-4 shrink-0 animate-spin text-muted-foreground" />
-      )}
     </Button>
   );
 }
