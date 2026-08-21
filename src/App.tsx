@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { CircleAlert, PenLine, RefreshCw, RotateCcw } from "lucide-react";
+import { CircleAlert, PenLine, RotateCcw } from "lucide-react";
 import { motion } from "motion/react";
 
 import { JotDialog } from "@/components/jot-dialog";
@@ -174,7 +174,6 @@ export default function App() {
     void loadStats(true);
   }
 
-  const loading = plansState.status === "loading";
   const repos = reposState.status === "ready" ? reposState.repos : [];
   const stats = statsState.status === "ready" ? statsState.stats.repos : null;
   const statsLoading = statsState.status === "loading";
@@ -203,22 +202,12 @@ export default function App() {
       </motion.header>
 
       <div className="flex min-w-0 flex-1 flex-col gap-6 md:mx-auto md:max-w-2xl md:overflow-y-auto md:px-8 md:py-8">
-        <div className="flex items-center gap-2">
+        <div className="flex">
           <MobileRepoButton
             selected={selectedRepo}
             reposLoading={reposState.status === "loading"}
             onClick={() => setDrawerOpen(true)}
           />
-          <Button
-            variant="outline"
-            size="icon"
-            aria-label="一覧と件数をリフレッシュ"
-            title="一覧と件数をリフレッシュ"
-            disabled={loading}
-            onClick={handleRefresh}
-          >
-            <RefreshCw aria-hidden />
-          </Button>
         </div>
 
         {plansState.status === "loading" && <PlanListSkeleton />}
