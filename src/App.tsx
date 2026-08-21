@@ -181,7 +181,8 @@ export default function App() {
   const statsLoading = statsState.status === "loading";
 
   return (
-    <main className="mx-auto flex min-h-dvh w-full max-w-2xl flex-col gap-6 px-4 py-10 pb-28 sm:py-16 md:max-w-5xl md:flex-row md:items-start">
+    // PC は viewport 高さで固定し、sidebar / content がそれぞれ独立スクロールする。モバイルは従来通りのページスクロール。
+    <main className="mx-auto flex min-h-dvh w-full max-w-2xl flex-col gap-6 px-4 py-10 pb-28 sm:py-16 md:h-dvh md:max-w-none md:min-h-0 md:flex-row md:gap-0 md:overflow-hidden md:p-0">
       <RepoSidebar
         repos={repos}
         stats={stats}
@@ -192,7 +193,7 @@ export default function App() {
         onRetryStats={handleRetryStats}
       />
 
-      <div className="flex min-w-0 flex-1 flex-col gap-6 md:max-w-2xl">
+      <div className="flex min-w-0 flex-1 flex-col gap-6 md:max-w-2xl md:overflow-y-auto md:px-8 md:py-8">
         <motion.header
           initial={{ opacity: 0, y: 6 }}
           animate={{ opacity: 1, y: 0 }}

@@ -134,11 +134,16 @@ function RepoNavContent({
   );
 }
 
-/** PC の固定左 sidebar（モバイルでは非表示）。 */
+/** PC の固定左 sidebar（モバイルでは非表示）。カードではなく画面端から伸びるペーンとして表示し、独立スクロールする。 */
 export function RepoSidebar({ className, ...props }: RepoNavProps & { className?: string }) {
   return (
-    <aside className={cn("hidden w-60 shrink-0 md:block", className)}>
-      <div className="rounded-xl border bg-card p-2.5 md:sticky md:top-16">
+    <aside
+      className={cn(
+        "hidden w-60 shrink-0 overflow-y-auto border-r border-sidebar-border bg-sidebar md:block",
+        className,
+      )}
+    >
+      <div className="p-3">
         <RepoNavContent {...props} />
       </div>
     </aside>
