@@ -1,4 +1,4 @@
-import { Menu, RefreshCw, X } from "lucide-react";
+import { Menu, PenLine, RefreshCw, X } from "lucide-react";
 
 import { PLAN_GROUP_ORDER, PLAN_STATUS_META } from "@/lib/plan-status";
 import type { RepoStatsEntry } from "@/lib/repo-stats";
@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { RepoNavSkeleton, RepoStatsSkeleton } from "@/components/repo-nav-skeleton";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 /**
  * repo sidebar / mobile drawer の共通ナビゲーション（ADR 0010）。
@@ -59,6 +60,21 @@ function StatusCounts({ counts }: { counts: RepoStatsEntry["counts"] }) {
   );
 }
 
+/** アプリロゴ + テーマトグル。PC は sidebar 最上部、モバイルは画面上部ヘッダーとして表示する。 */
+export function BrandHeader() {
+  return (
+    <div className="flex w-full items-center justify-between">
+      <div className="flex items-center gap-2">
+        <PenLine aria-hidden className="size-5 text-primary" />
+        <h1 className="font-heading text-2xl font-extrabold tracking-tighter">
+          Jotter<span className="text-primary">.</span>
+        </h1>
+      </div>
+      <ThemeToggle />
+    </div>
+  );
+}
+
 function RepoNavContent({
   repos,
   stats,
@@ -77,20 +93,17 @@ function RepoNavContent({
 
   return (
     <nav aria-label="リポジトリ選択" className="flex flex-col gap-2">
-      <div className="flex items-center justify-between px-1">
-        <h2 className="text-xs font-semibold text-muted-foreground">Repos</h2>
-        {statsFailed && (
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label="件数を再取得"
-            title="件数を再取得"
-            onClick={onRetryStats}
-          >
-            <RefreshCw aria-hidden />
-          </Button>
-        )}
-      </div>
+      {statsFailed && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="self-end text-muted-foreground"
+          onClick={onRetryStats}
+        >
+          <RefreshCw aria-hidden />
+          件数を再取得
+        </Button>
+      )}
       <ul className="flex flex-col gap-1">
         {ordered.map((repo) => {
           const entry = stats?.find((item) => item.fullName === repo.fullName) ?? null;
@@ -143,7 +156,8 @@ export function RepoSidebar({ className, ...props }: RepoNavProps & { className?
         className,
       )}
     >
-      <div className="p-3">
+      <div className="flex flex-col gap-4 p-3">
+        <BrandHeader />
         <RepoNavContent {...props} />
       </div>
     </aside>

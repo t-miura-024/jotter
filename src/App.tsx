@@ -7,9 +7,8 @@ import { JotDialog } from "@/components/jot-dialog";
 import { PlanDetailDialog } from "@/components/plan-detail-dialog";
 import { PlanList } from "@/components/plan-list";
 import { PlanListSkeleton } from "@/components/plan-list-skeleton";
-import { MobileRepoButton, RepoDrawer, RepoSidebar } from "@/components/repo-nav";
+import { MobileRepoButton, BrandHeader, RepoDrawer, RepoSidebar } from "@/components/repo-nav";
 import { ResultDialog, type SubmitResult } from "@/components/result-dialog";
-import { ThemeToggle } from "@/components/theme-toggle";
 import { AuthExpiredPanel } from "@/components/auth-expired-panel";
 import { Button } from "@/components/ui/button";
 import { UpdateToast } from "@/components/update-toast";
@@ -182,7 +181,7 @@ export default function App() {
 
   return (
     // PC は viewport 高さで固定し、sidebar / content がそれぞれ独立スクロールする。モバイルは従来通りのページスクロール。
-    <main className="mx-auto flex min-h-dvh w-full max-w-2xl flex-col gap-6 px-4 py-10 pb-28 sm:py-16 md:h-dvh md:max-w-none md:min-h-0 md:flex-row md:gap-0 md:overflow-hidden md:p-0">
+    <main className="mx-auto flex min-h-dvh w-full max-w-2xl flex-col gap-6 px-4 py-10 sm:py-16 md:h-dvh md:max-w-none md:min-h-0 md:flex-row md:gap-0 md:overflow-hidden md:p-0">
       <RepoSidebar
         repos={repos}
         stats={stats}
@@ -193,27 +192,17 @@ export default function App() {
         onRetryStats={handleRetryStats}
       />
 
-      <div className="flex min-w-0 flex-1 flex-col gap-6 md:max-w-2xl md:overflow-y-auto md:px-8 md:py-8">
-        <motion.header
-          initial={{ opacity: 0, y: 6 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.3, ease: "easeOut" }}
-          className="flex items-start justify-between gap-4"
-        >
-          <div className="flex flex-col gap-1.5">
-            <div className="flex items-center gap-2">
-              <PenLine aria-hidden className="size-5 text-primary" />
-              <h1 className="font-heading text-2xl font-extrabold tracking-tighter">
-                Jotter<span className="text-primary">.</span>
-              </h1>
-            </div>
-            <p className="text-sm text-muted-foreground">
-              選択した repo のアクティブな計画 Issue を Project の Status 別に表示します。
-            </p>
-          </div>
-          <ThemeToggle />
-        </motion.header>
+      {/* モバイルのヘッダー（PC では sidebar 最上部に BrandHeader を表示）。 */}
+      <motion.header
+        initial={{ opacity: 0, y: 6 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.3, ease: "easeOut" }}
+        className="md:hidden"
+      >
+        <BrandHeader />
+      </motion.header>
 
+      <div className="flex min-w-0 flex-1 flex-col gap-6 md:mx-auto md:max-w-2xl md:overflow-y-auto md:px-8 md:py-8">
         <div className="flex items-center gap-2">
           <MobileRepoButton
             selected={selectedRepo}
@@ -262,18 +251,16 @@ export default function App() {
 
         {plansState.status === "ready" && <PlanList plans={plansState.plans} onSelect={openPlan} />}
 
-        <div className="pointer-events-none fixed inset-x-0 bottom-6 z-40 flex justify-center">
-          <MotionButton
-            size="lg"
-            className="pointer-events-auto rounded-full px-6 shadow-md"
-            whileTap={{ scale: 0.96 }}
-            transition={{ type: "spring", stiffness: 500, damping: 30 }}
-            onClick={() => setJotOpen(true)}
-          >
-            <PenLine aria-hidden />
-            新しい jot
-          </MotionButton>
-        </div>
+        <MotionButton
+          size="icon"
+          aria-label="新しい jot"
+          className="fixed right-6 bottom-6 z-40 size-12 rounded-full shadow-md [&_svg]:size-5"
+          whileTap={{ scale: 0.96 }}
+          transition={{ type: "spring", stiffness: 500, damping: 30 }}
+          onClick={() => setJotOpen(true)}
+        >
+          <PenLine aria-hidden />
+        </MotionButton>
       </div>
 
       <RepoDrawer
