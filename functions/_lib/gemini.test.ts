@@ -53,13 +53,27 @@ describe("isFallbackTarget", () => {
     expect(isFallbackTarget(err)).toBe(true);
   });
 
+  it("500 はフォールバック対象", () => {
+    const err = new GeminiError("internal error", 500, "gemini-flash-latest");
+    expect(isFallbackTarget(err)).toBe(true);
+  });
+
+  it("503 はフォールバック対象", () => {
+    const err = new GeminiError(
+      "This model is currently experiencing high demand.",
+      503,
+      "gemini-flash-latest",
+    );
+    expect(isFallbackTarget(err)).toBe(true);
+  });
+
   it("400 はフォールバック対象外", () => {
     const err = new GeminiError("bad request", 400, "gemini-flash-latest");
     expect(isFallbackTarget(err)).toBe(false);
   });
 
-  it("500 はフォールバック対象外", () => {
-    const err = new GeminiError("server error", 500, "gemini-flash-latest");
+  it("401 はフォールバック対象外", () => {
+    const err = new GeminiError("unauthorized", 401, "gemini-flash-latest");
     expect(isFallbackTarget(err)).toBe(false);
   });
 });
@@ -97,6 +111,18 @@ describe("formatJot", () => {
     const result = await formatJot("走り書き", { ...OPTIONS, fetch: fetchMock });
     expect(result.modelUsed).toBe("gemini-flash-lite-latest");
     expect(result.fallbackOccurred).toBe(true);
+  });
+
+  it("503 のとき次のモデルへフォールバックする", async () => {
+    const fetchMock = vi.fn<typeof fetch>();
+    fetchMock.mockResolvedValueOnce(
+      geminiHttpError(503, "This model is currently experiencing high demand."),
+    );
+    fetchMock.mockResolvedValueOnce(geminiOk("タイトル", "本文"));
+    const result = await formatJot("走り書き", { ...OPTIONS, fetch: fetchMock });
+    expect(result.modelUsed).toBe("gemini-flash-lite-latest");
+    expect(result.fallbackOccurred).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("400 はフォールバックせず即座に投げる", async () => {
