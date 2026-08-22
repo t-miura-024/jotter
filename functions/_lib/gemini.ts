@@ -2,7 +2,7 @@
  * Gemini REST API クライアント（ADR 0005 / 0007）。
  *
  * fallback chain: gemini-flash-latest → gemini-flash-lite-latest → gemini-pro-latest
- * 429 / quota exceeded のとき次のモデルへフォールバックする（ADR 0005）。
+ * 429 / 500 / 503 / quota exceeded のとき次のモデルへフォールバックする（ADR 0005）。
  * API key は Cloudflare secret（env.GEMINI_API_KEY）から受け取り、ブラウザには出さない（ADR 0003）。
  */
 
@@ -57,9 +57,13 @@ function extractErrorMessage(body: unknown): string {
   return (body as { error?: { message?: string } }).error?.message ?? "";
 }
 
-/** 429 または quota exceeded をフォールバック対象とみなす（ADR 0005）。 */
+/**
+ * 一時的なサーバー側エラー（429 / 500 / 503）と quota exceeded を
+ * フォールバック対象とみなす（ADR 0005。Google のリトライ推奨ステータスに準拠）。
+ * 実障害として頻発する 503 "high demand" も後続モデルへフォールバックする。
+ */
 export function isFallbackTarget(error: GeminiError): boolean {
-  if (error.status === 429) return true;
+  if (error.status === 429 || error.status === 500 || error.status === 503) return true;
   return extractErrorMessage(error.errorBody).toLowerCase().includes("quota");
 }
 
@@ -165,7 +169,7 @@ async function callGemini(
  * jot を LLM で整形する（ADR 0007: 忠実な記録のみ）。
  *
  * preferredModel を先頭にしたチェーンで順に試し、
- * 429 / quota exceeded のときは次のモデルへフォールバックする（ADR 0005）。
+ * 429 / 500 / 503 / quota exceeded のときは次のモデルへフォールバックする（ADR 0005）。
  * フォールバック対象外のエラー（ネットワークエラー・4xx 非 429 など）は即座に投げる。
  * 全モデル失敗時は最後に発生したエラーを投げる。
  */
