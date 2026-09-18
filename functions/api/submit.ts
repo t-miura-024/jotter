@@ -1,3 +1,4 @@
+import type { SubmitResult } from "../../shared/submit";
 import { GitHubClient } from "../_github/client";
 import { validateExternalRepo } from "../_github/external-repo";
 import { addIssueToProject, type ProjectConfig } from "../_github/project";
@@ -71,8 +72,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     return json({ error: "repo には内部 repo（t-miura-024/*）のみ指定できます" }, 400);
   }
 
-  const externalInput =
-    typeof payload.externalRepo === "string" ? payload.externalRepo.trim() : "";
+  const externalInput = typeof payload.externalRepo === "string" ? payload.externalRepo.trim() : "";
   const externalValidation = validateExternalRepo(externalInput);
   if (!externalValidation.ok) {
     return json({ error: externalValidation.error }, 400);
@@ -137,9 +137,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
           ...result,
           body: formatted.body,
           modelUsed: formatted.modelUsed,
-          fallbackOccurred: formatted.fallbackOccurred,
+          fallbacks: formatted.fallbacks,
           projectAdded,
-        });
+        } satisfies SubmitResult);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         send("error", { error: message });

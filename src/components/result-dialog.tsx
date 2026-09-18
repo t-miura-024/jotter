@@ -10,16 +10,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
-export type SubmitResult = {
-  number: number;
-  title: string;
-  url: string;
-  repo: string;
-  body: string;
-  modelUsed: string;
-  fallbackOccurred: boolean;
-  projectAdded: boolean;
-};
+import type { SubmitResult } from "../../shared/submit";
 
 type ResultDialogProps = {
   open: boolean;
@@ -52,14 +43,23 @@ export function ResultDialog({ open, onOpenChange, result }: ResultDialogProps) 
           <MarkdownBody markdown={result.body} />
         </div>
 
-        {(result.fallbackOccurred || !result.projectAdded) && (
+        {(result.fallbacks.length > 0 || !result.projectAdded) && (
           <div className="flex flex-col gap-1.5 text-xs text-muted-foreground">
-            {result.fallbackOccurred && (
-              <p className="flex items-center gap-1.5">
-                <TriangleAlert aria-hidden className="size-3.5 shrink-0" />
-                フォールバック発生: <span className="font-mono">{result.modelUsed}</span>{" "}
-                を使用しました。
-              </p>
+            {result.fallbacks.length > 0 && (
+              <details>
+                <summary className="cursor-pointer">
+                  <TriangleAlert aria-hidden className="mr-1.5 inline size-3.5" />
+                  フォールバック発生（{result.fallbacks.length} 件失敗）:{" "}
+                  <span className="font-mono">{result.modelUsed}</span> を使用しました
+                </summary>
+                <ul className="mt-1.5 list-disc space-y-1 pl-5 font-mono break-all">
+                  {result.fallbacks.map(({ model, status, message }) => (
+                    <li key={model}>
+                      {model}: {status} {message}
+                    </li>
+                  ))}
+                </ul>
+              </details>
             )}
             {!result.projectAdded && (
               <p className="flex items-center gap-1.5">

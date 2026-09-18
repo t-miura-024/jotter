@@ -35,15 +35,15 @@ pnpm dev         # http://localhost:5173（/api/* は localhost:8788 へプロ�
 
 ## Secrets / 環境変数
 
-| 名前                | 必須 | 説明                                                                                                                               |
-| ------------------- | ---- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `GITHUB_PAT`        | ✅   | GitHub Classic PAT（scope: `repo` + `project`、[ADR 0002](docs/adr/0002-github-classic-pat.md)）。ブラウザには一切公開されません。 |
-| `GEMINI_API_KEY`    | ✅   | Gemini API key（LLM 整形用、[ADR 0005](docs/adr/0005-gemini-speed-first-fallback.md)）。未設定時は起票リクエストが 500 になります。 |
-| `PROJECT_ID`        | 任意 | GitHub ProjectV2 の node ID（`PVT_...`）。3 つすべて揃えると Project 連携が有効化されます。                                        |
-| `STATUS_FIELD_ID`   | 任意 | ProjectV2 の Status フィールド ID（`PVTSSF_...`）。                                                                                |
-| `STATUS_OPTION_ID`  | 任意 | Status=draft の option ID。                                                                                                        |
-| `CLOUDFLARE_API_TOKEN` | CI  | Cloudflare API トークン（Pages: Edit 権限）。GitHub Actions による自動デプロイ専用で、アプリのランタイムでは使いません。           |
-| `CLOUDFLARE_ACCOUNT_ID` | CI | Cloudflare Account ID。同上。                                                                                                      |
+| 名前                    | 必須 | 説明                                                                                                                                |
+| ----------------------- | ---- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `GITHUB_PAT`            | ✅   | GitHub Classic PAT（scope: `repo` + `project`、[ADR 0002](docs/adr/0002-github-classic-pat.md)）。ブラウザには一切公開されません。  |
+| `GEMINI_API_KEY`        | ✅   | Gemini API key（LLM 整形用、[ADR 0005](docs/adr/0005-gemini-speed-first-fallback.md)）。未設定時は起票リクエストが 500 になります。 |
+| `PROJECT_ID`            | 任意 | GitHub ProjectV2 の node ID（`PVT_...`）。3 つすべて揃えると Project 連携が有効化されます。                                         |
+| `STATUS_FIELD_ID`       | 任意 | ProjectV2 の Status フィールド ID（`PVTSSF_...`）。                                                                                 |
+| `STATUS_OPTION_ID`      | 任意 | Status=draft の option ID。                                                                                                         |
+| `CLOUDFLARE_API_TOKEN`  | CI   | Cloudflare API トークン（Pages: Edit 権限）。GitHub Actions による自動デプロイ専用で、アプリのランタイムでは使いません。            |
+| `CLOUDFLARE_ACCOUNT_ID` | CI   | Cloudflare Account ID。同上。                                                                                                       |
 
 - ローカル: `.dev.vars.example` を `.dev.vars` にコピーして値を設定（`wrangler pages dev` が読み込みます）。
 - 本番: `pnpm wrangler pages secret put GITHUB_PAT`（他も同様に `secret put`）。
@@ -52,7 +52,10 @@ pnpm dev         # http://localhost:5173（/api/* は localhost:8788 へプロ�
 ## 起票ルール
 
 - LLM 整形: Gemini が jot からタイトルを抽出し、本文を読みやすい Markdown へ清書します（[ADR 0007](docs/adr/0007-faithful-llm-formatting.md)。忠実な記録のみで、内容の改変・肉付けはしない）
-- モデル: 優先モデル（GUI セレクタで選択）を試し、失敗時は自動的に別モデルへフォールバック（[ADR 0005](docs/adr/0005-gemini-speed-first-fallback.md)）。結果の `modelUsed` / `fallbackOccurred` を UI に表示します
+- モデル: 優先モデル（GUI セレクタで選択）を試し、429 / 500 / 503 / quota exceeded のとき別モデルへフォールバック（[ADR 0005](docs/adr/0005-gemini-speed-first-fallback.md)）。成功時の `done` は使用モデル `modelUsed` と失敗履歴 `fallbacks: { model, status, message }[]` を返します（空配列＝フォールバックなし）
+  - 結果ダイアログでは「フォールバック発生（{n} 件失敗）: {成功モデル} を使用しました」を折りたたみ（native `<details>`）で表示。展開すると失敗したモデルのみが実際の試行順に `{model}: {status} {message}` として並びます。通常成功時は表示しません
+  - `message` は Gemini の `error.message`（空・欠落時は `response.statusText`）を 120 文字以内に切り詰めたものです。生のエラーボディは表示しません
+  - サーバーでは失敗ごとに `console.warn`、全モデル失敗時には履歴付きの `console.error` を出力します。全モデル失敗時の `error` イベントとユーザー向け表示は従来どおりです
 - target ルーティング: 選択中の内部 repo（`t-miura-024/*`）へ直接起票。note inbox 選択時（既定）は note inbox（`t-miura-024/note`）へ起票し、外部 repo 入力があるときだけ由来を示す `external/{owner}-{name}` label を付与（`external/others` は新規付与しない）。外部 repo 入力は note inbox 選択時の JotDialog に限定され、外部 repo の plan list 閲覧はしない
 - label: `kind/plan` を冪等に確保（`gh label create --force` 相当）して付与
 - Project 連携: 3 つの Project secret がすべて設定されている場合、起票後に ProjectV2 へ item 追加 + Status=draft を設定。best-effort で、失敗しても起票は成功として扱い `projectAdded: false` を UI に表示します
