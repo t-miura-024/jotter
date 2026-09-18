@@ -1,4 +1,6 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import type { SubmitResult } from "../../shared/submit";
 
 import type { Env } from "../_types";
 import { onRequestPost } from "./submit";
@@ -70,8 +72,14 @@ function mockNoteInboxSuccess(fetchMock: ReturnType<typeof vi.fn>, number = 7) {
   fetchMock.mockResolvedValueOnce(createdIssue(number, "t-miura-024/note"));
 }
 
+beforeEach(() => {
+  vi.spyOn(console, "warn").mockImplementation(() => {});
+  vi.spyOn(console, "error").mockImplementation(() => {});
+});
+
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 describe("POST /api/submit — 基本バリデーション", () => {
@@ -194,12 +202,14 @@ describe("POST /api/submit — repo 選択（内部 repo 限定）", () => {
       repo: "t-miura-024/note",
       body: "LLM 本文",
       modelUsed: "gemini-flash-latest",
-      fallbackOccurred: false,
+      fallbacks: [],
       projectAdded: false,
-    });
+    } satisfies SubmitResult);
+    expect(console.warn).not.toHaveBeenCalled();
+    expect(console.error).not.toHaveBeenCalled();
   });
 
-  it("fallback 発生時は done に fallbackOccurred: true と最終モデルを含む", async () => {
+  it("fallback 発生時は done に失敗履歴と最終モデルを含む", async () => {
     const fetchMock = vi.fn<typeof fetch>();
     fetchMock.mockResolvedValueOnce(
       jsonResponse({ error: { message: "Resource exhausted" } }, 429),
@@ -214,7 +224,48 @@ describe("POST /api/submit — repo 選択（内部 repo 限定）", () => {
     const events = await parseSseEvents(response);
     const done = events.find((e) => e.event === "done")!.data;
     expect(done.modelUsed).toBe("gemini-flash-lite-latest");
-    expect(done.fallbackOccurred).toBe(true);
+    expect(done.fallbacks).toEqual([
+      { model: "gemini-flash-latest", status: 429, message: "Resource exhausted" },
+    ]);
+    expect(console.warn).toHaveBeenCalledExactlyOnceWith("Gemini モデルの整形に失敗しました。", {
+      model: "gemini-flash-latest",
+      status: 429,
+      message: "Resource exhausted",
+    });
+    expect(console.error).not.toHaveBeenCalled();
+  });
+
+  it("優先モデルからの複数失敗の履歴を切り詰めて done とログへ伝達する", async () => {
+    const fetchMock = vi.fn<typeof fetch>();
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ error: { message: "x".repeat(130) }, private: "非公開ボディ" }, 429),
+    );
+    fetchMock.mockResolvedValueOnce(
+      new Response("生のエラーボディ", { status: 503, statusText: "Service Unavailable" }),
+    );
+    mockNoteInboxSuccess(fetchMock, 8);
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await onRequestPost(
+      context('{"jot":"走り書き","preferredModel":"gemini-pro-latest"}', ENV),
+    );
+    const events = await parseSseEvents(response);
+    const fallbacks = [
+      { model: "gemini-pro-latest", status: 429, message: "x".repeat(120) },
+      { model: "gemini-flash-latest", status: 503, message: "Service Unavailable" },
+    ];
+    expect(events.map((event) => event.event)).toEqual(["formatting", "creating", "done"]);
+    expect(events[2].data.modelUsed).toBe("gemini-flash-lite-latest");
+    expect(events[2].data.fallbacks).toEqual(fallbacks);
+    expect(console.warn).toHaveBeenCalledTimes(2);
+    fallbacks.forEach((fallback, index) => {
+      expect(console.warn).toHaveBeenNthCalledWith(
+        index + 1,
+        "Gemini モデルの整形に失敗しました。",
+        fallback,
+      );
+    });
+    expect(console.error).not.toHaveBeenCalled();
   });
 
   it("preferredModel をリクエストで指定できる", async () => {
@@ -222,9 +273,7 @@ describe("POST /api/submit — repo 選択（内部 repo 限定）", () => {
     mockNoteInboxSuccess(fetchMock, 9);
     vi.stubGlobal("fetch", fetchMock);
 
-    await onRequestPost(
-      context('{"jot":"走り書き","preferredModel":"gemini-pro-latest"}', ENV),
-    );
+    await onRequestPost(context('{"jot":"走り書き","preferredModel":"gemini-pro-latest"}', ENV));
 
     expect(String(fetchMock.mock.calls[0][0])).toContain("gemini-pro-latest");
   });
@@ -239,15 +288,67 @@ describe("POST /api/submit — repo 選択（内部 repo 限定）", () => {
 
     const events = await parseSseEvents(response);
     expect(events.map((e) => e.event)).toEqual(["formatting", "error"]);
-    expect(String(events[1].data.error)).toContain("LLM 整形に失敗しました");
+    expect(events[1].data).toEqual({
+      error: "LLM 整形に失敗しました: Gemini API (gemini-pro-latest): 500 Internal Server Error",
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    const fallbacks = ["gemini-flash-latest", "gemini-flash-lite-latest", "gemini-pro-latest"].map(
+      (model) => ({ model, status: 500, message: "Internal Server Error" }),
+    );
+    expect(console.warn).toHaveBeenCalledTimes(3);
+    fallbacks.forEach((fallback, index) => {
+      expect(console.warn).toHaveBeenNthCalledWith(
+        index + 1,
+        "Gemini モデルの整形に失敗しました。",
+        fallback,
+      );
+    });
+    expect(console.error).toHaveBeenCalledExactlyOnceWith(
+      "すべての Gemini モデルで整形に失敗しました。",
+      fallbacks,
+    );
   });
+
+  it.each(["http", "network"])(
+    "最後のモデルが %s エラーでも全モデル失敗をログに残す",
+    async (failure) => {
+      const fetchMock = vi.fn<typeof fetch>();
+      fetchMock.mockResolvedValueOnce(jsonResponse({ error: { message: "Internal error" } }, 500));
+      fetchMock.mockResolvedValueOnce(jsonResponse({ error: { message: "High demand" } }, 503));
+      if (failure === "http") {
+        fetchMock.mockResolvedValueOnce(
+          jsonResponse({ error: { message: "Invalid argument" } }, 400),
+        );
+      } else {
+        fetchMock.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+      }
+      vi.stubGlobal("fetch", fetchMock);
+
+      const response = await onRequestPost(context('{"jot":"hello"}', ENV));
+      const events = await parseSseEvents(response);
+      expect(events.map((event) => event.event)).toEqual(["formatting", "error"]);
+      expect(events[1].data).toEqual({
+        error:
+          failure === "http"
+            ? "LLM 整形に失敗しました: Gemini API (gemini-pro-latest): 400 Invalid argument"
+            : "LLM 整形に失敗しました: Failed to fetch",
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+      expect(console.warn).toHaveBeenCalledTimes(2);
+      expect(console.error).toHaveBeenCalledExactlyOnceWith(
+        "すべての Gemini モデルで整形に失敗しました。",
+        [
+          { model: "gemini-flash-latest", status: 500, message: "Internal error" },
+          { model: "gemini-flash-lite-latest", status: 503, message: "High demand" },
+        ],
+      );
+    },
+  );
 
   it("GitHub API が失敗したら SSE error イベントを返す", async () => {
     const fetchMock = vi.fn<typeof fetch>();
     fetchMock.mockResolvedValueOnce(geminiOk("タイトル", "本文"));
-    fetchMock.mockResolvedValueOnce(
-      jsonResponse({ message: "Internal Server Error" }, 500),
-    );
+    fetchMock.mockResolvedValueOnce(jsonResponse({ message: "Internal Server Error" }, 500));
     vi.stubGlobal("fetch", fetchMock);
 
     const response = await onRequestPost(context('{"jot":"hello"}', ENV));
@@ -306,7 +407,10 @@ describe("POST /api/submit — 外部 repo 入力（note inbox 限定の externa
     vi.stubGlobal("fetch", fetchMock);
 
     const response = await onRequestPost(
-      context('{"jot":"走り書き","repo":"t-miura-024/note","externalRepo":"other-org/some-repo"}', ENV),
+      context(
+        '{"jot":"走り書き","repo":"t-miura-024/note","externalRepo":"other-org/some-repo"}',
+        ENV,
+      ),
     );
 
     const events = await parseSseEvents(response);
@@ -376,10 +480,7 @@ describe("POST /api/submit — 外部 repo 入力（note inbox 限定の externa
     ];
     for (const externalRepo of cases) {
       const response = await onRequestPost(
-        context(
-          JSON.stringify({ jot: "走り書き", repo: "t-miura-024/note", externalRepo }),
-          ENV,
-        ),
+        context(JSON.stringify({ jot: "走り書き", repo: "t-miura-024/note", externalRepo }), ENV),
       );
       expect(response.status).toBe(400);
       const body = (await response.json()) as { error: string };

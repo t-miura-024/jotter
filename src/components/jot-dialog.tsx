@@ -17,7 +17,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { SubmitOverlay, type SubmitStage } from "@/components/submit-overlay";
 import { Textarea } from "@/components/ui/textarea";
-import type { SubmitResult } from "@/components/result-dialog";
+import type { SubmitResult } from "../../shared/submit";
 import { NOTE_INBOX, describeJotTarget, validateExternalRepo } from "@/lib/target";
 
 type SubmitState =
@@ -193,7 +193,11 @@ export function JotDialog({ open, onOpenChange, repo, onSuccess }: JotDialogProp
             )}
           </p>
 
-          <ModelSelector value={preferredModel} onChange={setPreferredModel} disabled={submitting} />
+          <ModelSelector
+            value={preferredModel}
+            onChange={setPreferredModel}
+            disabled={submitting}
+          />
 
           {isNoteInbox && (
             <div className="flex flex-col gap-1">
@@ -230,7 +234,9 @@ export function JotDialog({ open, onOpenChange, repo, onSuccess }: JotDialogProp
                 void submit();
               }
             }}
-            placeholder={"思ったままを書き留めてください。\nLLM がタイトルを抽出し、本文を Markdown に整えます。"}
+            placeholder={
+              "思ったままを書き留めてください。\nLLM がタイトルを抽出し、本文を Markdown に整えます。"
+            }
             className="min-h-[30vh] resize-y text-base leading-relaxed"
           />
 
@@ -260,7 +266,10 @@ export function JotDialog({ open, onOpenChange, repo, onSuccess }: JotDialogProp
           )}
 
           {state.status === "error" && (
-            <div role="alert" className="rounded-lg border border-destructive/25 bg-destructive/5 px-4 py-3">
+            <div
+              role="alert"
+              className="rounded-lg border border-destructive/25 bg-destructive/5 px-4 py-3"
+            >
               <div className="flex items-start gap-2">
                 <CircleAlert aria-hidden className="mt-0.5 size-4 shrink-0 text-destructive" />
                 <div className="min-w-0 flex-1">

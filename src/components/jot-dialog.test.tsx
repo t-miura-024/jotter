@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 
 import { JotDialog } from "./jot-dialog";
+import type { SubmitResult } from "../../shared/submit";
 
 const sseResponse = (event: string, data: unknown): Response =>
   new Response(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`, {
@@ -17,14 +18,14 @@ const jsonResponse = (body: unknown, status = 200): Response =>
     headers: { "Content-Type": "application/json" },
   });
 
-const doneResult = {
+const doneResult: SubmitResult = {
   number: 7,
   title: "タイトル",
   url: "https://github.com/t-miura-024/note/issues/7",
   repo: "t-miura-024/note",
   body: "本文",
   modelUsed: "gemini-flash-latest",
-  fallbackOccurred: false,
+  fallbacks: [],
   projectAdded: false,
 };
 
@@ -117,9 +118,7 @@ describe("JotDialog — 外部 repo 入力のクライアント検証", () => {
 
 describe("JotDialog — submit payload と状態保持", () => {
   it("note inbox + 有効な外部 repo 入力は externalRepo を payload に含めて送信する", async () => {
-    const fetchMock = vi.fn<typeof fetch>(async () =>
-      sseResponse("error", { error: "boom" }),
-    );
+    const fetchMock = vi.fn<typeof fetch>(async () => sseResponse("error", { error: "boom" }));
     vi.stubGlobal("fetch", fetchMock);
     setup({ repo: "t-miura-024/note" });
 
@@ -176,49 +175,62 @@ describe("JotDialog — submit payload と状態保持", () => {
     expect(screen.getByRole("alert").textContent).toContain("起票に失敗しました");
     // 両方とも保持され、再送信できる
     expect((screen.getByLabelText("jot 本文") as HTMLTextAreaElement).value).toBe("保持される jot");
-    expect(
-      (screen.getByLabelText("外部 repo（owner/name 形式）") as HTMLInputElement).value,
-    ).toBe("other-org/some-repo");
+    expect((screen.getByLabelText("外部 repo（owner/name 形式）") as HTMLInputElement).value).toBe(
+      "other-org/some-repo",
+    );
   });
 });
 
 describe("JotDialog — 起票成功時の消去", () => {
-  it("起票成功後は jot 本文と外部 repo 入力の両方が消去される", async () => {
-    vi.useFakeTimers();
-    const onSuccess = vi.fn();
-    // 実サーバーと同じ SSE シーケンス（formatting → creating → done）
-    const sse = [
-      'event: formatting\ndata: {}\n\n',
-      'event: creating\ndata: {}\n\n',
-      `event: done\ndata: ${JSON.stringify(doneResult)}\n\n`,
-    ].join("");
-    const fetchMock = vi.fn<typeof fetch>(async () =>
-      new Response(sse, { headers: { "Content-Type": "text/event-stream" } }),
-    );
-    vi.stubGlobal("fetch", fetchMock);
-    setup({ repo: "t-miura-024/note", onSuccess });
+  it.each([false, true])(
+    "起票成功後は履歴を伝達し入力を消去する（フォールバック: %s）",
+    async (withFallbacks) => {
+      const expectedResult: SubmitResult = withFallbacks
+        ? {
+            ...doneResult,
+            modelUsed: "gemini-flash-lite-latest",
+            fallbacks: [
+              { model: "gemini-pro-latest", status: 429, message: "Resource exhausted" },
+              { model: "gemini-flash-latest", status: 503, message: "High demand" },
+            ],
+          }
+        : doneResult;
+      vi.useFakeTimers();
+      const onSuccess = vi.fn();
+      // 実サーバーと同じ SSE シーケンス（formatting → creating → done）
+      const sse = [
+        "event: formatting\ndata: {}\n\n",
+        "event: creating\ndata: {}\n\n",
+        `event: done\ndata: ${JSON.stringify(expectedResult)}\n\n`,
+      ].join("");
+      const fetchMock = vi.fn<typeof fetch>(
+        async () => new Response(sse, { headers: { "Content-Type": "text/event-stream" } }),
+      );
+      vi.stubGlobal("fetch", fetchMock);
+      setup({ repo: "t-miura-024/note", onSuccess });
 
-    fillJot("消える jot");
-    fireEvent.change(screen.getByLabelText("外部 repo（owner/name 形式）"), {
-      target: { value: "other-org/some-repo" },
-    });
-    await clickSubmit();
-
-    // オーバーレイの成功シーケンス（紙飛行機ループ → 飛び立ち → 合図）を完走させる。
-    // 各タイマーが React の commit を挟んで次段のタイマーを予約するため、
-    // act をまたいでチャンク進行させる。
-    const chunks = [600, 500, 400, 500, 1000, 1400, 1200, 2000];
-    for (const ms of chunks) {
-      await act(async () => {
-        vi.advanceTimersByTime(ms);
+      fillJot("消える jot");
+      fireEvent.change(screen.getByLabelText("外部 repo（owner/name 形式）"), {
+        target: { value: "other-org/some-repo" },
       });
-      if (onSuccess.mock.calls.length > 0) break;
-    }
+      await clickSubmit();
 
-    expect(onSuccess).toHaveBeenCalledWith(doneResult);
-    expect((screen.getByLabelText("jot 本文") as HTMLTextAreaElement).value).toBe("");
-    expect(
-      (screen.getByLabelText("外部 repo（owner/name 形式）") as HTMLInputElement).value,
-    ).toBe("");
-  });
+      // オーバーレイの成功シーケンス（紙飛行機ループ → 飛び立ち → 合図）を完走させる。
+      // 各タイマーが React の commit を挟んで次段のタイマーを予約するため、
+      // act をまたいでチャンク進行させる。
+      const chunks = [600, 500, 400, 500, 1000, 1400, 1200, 2000];
+      for (const ms of chunks) {
+        await act(async () => {
+          vi.advanceTimersByTime(ms);
+        });
+        if (onSuccess.mock.calls.length > 0) break;
+      }
+
+      expect(onSuccess).toHaveBeenCalledExactlyOnceWith(expectedResult);
+      expect((screen.getByLabelText("jot 本文") as HTMLTextAreaElement).value).toBe("");
+      expect(
+        (screen.getByLabelText("外部 repo（owner/name 形式）") as HTMLInputElement).value,
+      ).toBe("");
+    },
+  );
 });

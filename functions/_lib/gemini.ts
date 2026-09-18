@@ -23,12 +23,16 @@ export type FormattedJot = {
   body: string;
 };
 
+import type { FallbackEvent } from "../../shared/submit";
+
+export type { FallbackEvent } from "../../shared/submit";
+
 /** formatJot の返却値。整形結果 + 使用モデル情報（M5 UI が消費する）。 */
 export type FormatJotResult = FormattedJot & {
   /** 実際に応答を返したモデル名。 */
   modelUsed: string;
-  /** 優先モデル以外へフォールバックしたか。 */
-  fallbackOccurred: boolean;
+  /** 試行順に保持した失敗モデルの履歴。空配列＝フォールバックなし。 */
+  fallbacks: FallbackEvent[];
 };
 
 export type GeminiClientOptions = {
@@ -45,16 +49,19 @@ export class GeminiError extends Error {
     readonly model: string,
     /** フォールバック判定に使う生のエラーボディ。 */
     readonly errorBody?: unknown,
+    /** 表示用の元メッセージ。例外メッセージや quota 判定用ボディとは分離する。 */
+    readonly detail = "",
   ) {
     super(message);
     this.name = "GeminiError";
   }
 }
 
-/** エラーボディから message 文字列を抜き出す。 */
+/** エラーボディから message 文字列を抜き出す。非文字列は空として扱う。 */
 function extractErrorMessage(body: unknown): string {
   if (typeof body !== "object" || body === null) return "";
-  return (body as { error?: { message?: string } }).error?.message ?? "";
+  const message = (body as { error?: { message?: unknown } }).error?.message;
+  return typeof message === "string" ? message : "";
 }
 
 /**
@@ -134,6 +141,7 @@ async function callGemini(
       response.status,
       model,
       errorBody,
+      detail,
     );
   }
 
@@ -171,7 +179,8 @@ async function callGemini(
  * preferredModel を先頭にしたチェーンで順に試し、
  * 429 / 500 / 503 / quota exceeded のときは次のモデルへフォールバックする（ADR 0005）。
  * フォールバック対象外のエラー（ネットワークエラー・4xx 非 429 など）は即座に投げる。
- * 全モデル失敗時は最後に発生したエラーを投げる。
+ * 全モデル失敗時は、最後のエラーの種別に関わらず失敗履歴付きの console.error を
+ * 1 回出してから、最後に発生したエラーを投げる。
  */
 export async function formatJot(
   jot: string,
@@ -179,21 +188,32 @@ export async function formatJot(
 ): Promise<FormatJotResult> {
   const chain = buildModelChain(options.preferredModel);
   let lastError: Error | null = null;
+  const fallbacks: FallbackEvent[] = [];
 
-  for (let i = 0; i < chain.length; i++) {
-    const model = chain[i];
+  for (const [index, model] of chain.entries()) {
     try {
       const formatted = await callGemini(jot, model, options);
-      return { ...formatted, modelUsed: model, fallbackOccurred: i > 0 };
+      return { ...formatted, modelUsed: model, fallbacks };
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
       lastError = err;
-      // GeminiError 以外（ネットワークエラー等）は即座に投げる
-      if (!(err instanceof GeminiError)) throw err;
-      // フォールバック対象外（429 以外の 4xx など）は即座に投げる
-      if (!isFallbackTarget(err)) throw err;
+      // GeminiError 以外（ネットワークエラー等）・フォールバック対象外
+      // （429 以外の 4xx など）はフォールバックしない。
+      // 最後のモデルの失敗は、エラー種別に関わらず全モデル失敗としてログに残す。
+      if (!(err instanceof GeminiError) || !isFallbackTarget(err)) {
+        if (index === chain.length - 1) break;
+        throw err;
+      }
+      const fallback: FallbackEvent = {
+        model: err.model,
+        status: err.status,
+        message: err.detail.slice(0, 120),
+      };
+      fallbacks.push(fallback);
+      console.warn("Gemini モデルの整形に失敗しました。", fallback);
     }
   }
 
+  console.error("すべての Gemini モデルで整形に失敗しました。", fallbacks);
   throw lastError ?? new Error("すべてのモデルで整形に失敗しました");
 }
