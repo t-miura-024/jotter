@@ -5,6 +5,9 @@ import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 
 export type SubmitStage = "formatting" | "creating";
 
+/** Monologue 送信の 3 段階（formatting → writing-note → creating-event）。 */
+export type MonologueOverlayStage = "formatting" | "writing-note" | "creating-event";
+
 type Phase =
   | "paper-in"
   | "crease"
@@ -16,7 +19,7 @@ type Phase =
   | "success";
 
 type SubmitOverlayProps = {
-  stage: SubmitStage;
+  stage: SubmitStage | MonologueOverlayStage;
   /** 紙の上に表示する jot 本文。 */
   jot: string;
   /** サーバーから done イベントを受信したか。 */
@@ -48,7 +51,7 @@ const LOOP_STEPS: Array<{ phase: Phase; duration: number }> = [
   { phase: "depart", duration: 760 },
 ];
 
-const STAGE_MESSAGES: Record<SubmitStage, string[]> = {
+const STAGE_MESSAGES: Record<SubmitStage | MonologueOverlayStage, string[]> = {
   formatting: [
     "走り書きを読みやすい形に整えています…",
     "タイトルをひねり出し中…",
@@ -59,6 +62,16 @@ const STAGE_MESSAGES: Record<SubmitStage, string[]> = {
     "GitHub に届けています…",
     "Issue をしたためています…",
     "kind/plan ラベルを貼っています…",
+  ],
+  "writing-note": [
+    "note デイリーノートに書き込んでいます…",
+    "今日の記録をまとめています…",
+    "箇条書きを転記しています…",
+  ],
+  "creating-event": [
+    "Google カレンダーに登録しています…",
+    "予定を書き込んでいます…",
+    "記録の日時を合わせています…",
   ],
 };
 
@@ -98,7 +111,8 @@ export function SubmitOverlay({ stage, jot, done, onFinished }: SubmitOverlayPro
     const advance = () => {
       if (cancelled) return;
       const step = LOOP_STEPS[idx % LOOP_STEPS.length];
-      const shouldLaunch = stageRef.current !== "formatting" || doneRef.current;
+      const shouldLaunch =
+        stageRef.current === "creating" || stageRef.current === "creating-event" || doneRef.current;
       // depart 直前、または depart 中に遷移が来て次の紙が出る直前で離脱する。
       if (shouldLaunch && (step.phase === "depart" || (step.phase === "paper-in" && idx > 0))) {
         setPhase("launch");
@@ -201,10 +215,7 @@ function PaperSheet({ phase, jot }: { phase: Phase; jot: string }) {
   const collapsing = phase === "collapse";
 
   return (
-    <div
-      className="absolute inset-0 flex items-center justify-center"
-      style={{ perspective: 900 }}
-    >
+    <div className="absolute inset-0 flex items-center justify-center" style={{ perspective: 900 }}>
       <motion.div
         className="relative"
         style={{ width: PAPER_W, height: PAPER_H, transformStyle: "preserve-3d" }}
@@ -301,7 +312,10 @@ function FoldPuff() {
   ];
 
   return (
-    <div aria-hidden className="pointer-events-none absolute inset-0 flex items-center justify-center">
+    <div
+      aria-hidden
+      className="pointer-events-none absolute inset-0 flex items-center justify-center"
+    >
       {particles.map((particle) => (
         <motion.span
           key={`${particle.x},${particle.y}`}
@@ -617,7 +631,10 @@ function SuccessBurst() {
 /** 背景に漂う塵。 */
 function Motes() {
   return (
-    <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden rounded-[inherit]">
+    <div
+      aria-hidden
+      className="pointer-events-none absolute inset-0 overflow-hidden rounded-[inherit]"
+    >
       {MOTES.map((mote) => (
         <motion.span
           key={`${mote.x}-${mote.y}`}
@@ -648,7 +665,7 @@ function Motes() {
 }
 
 /** ステージ別のローテーションメッセージ。2.6 秒ごとに切り替わる。 */
-function MessageLine({ stage }: { stage: SubmitStage }) {
+function MessageLine({ stage }: { stage: SubmitStage | MonologueOverlayStage }) {
   const [index, setIndex] = useState(0);
 
   useEffect(() => {
