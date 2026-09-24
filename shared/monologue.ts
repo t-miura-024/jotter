@@ -20,10 +20,10 @@ export type Monologue = {
    */
   time: string | null;
   /**
-   * GC 説明文の原文。sources.google が true の場合に保持する。
-   * 突合時は note 本文を body に優先し、GC 本文は破棄せずここに残す。
+   * note本文とGC本文の表記差の有無。突合時は note 本文を body に優先し、
+   * GC原文は破棄して差分有無のみ保持する。
    */
-  gcBody?: string;
+  hasBodyDifference: boolean;
   sources: MonologueSources;
 };
 

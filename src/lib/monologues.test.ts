@@ -16,6 +16,7 @@ const monologuesBody = {
       body: "- まず書く",
       date: "2026-09-23",
       time: "08:15",
+      hasBodyDifference: false,
       sources: { note: true, google: true },
     },
   ],
