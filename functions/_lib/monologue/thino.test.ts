@@ -60,6 +60,7 @@ describe("parseMonologueSection", () => {
         body: "- 今日のふりかえり",
         date: "2026-09-23",
         time: "21:40",
+        hasBodyDifference: false,
         sources: { note: true, google: false },
       },
       {
@@ -67,6 +68,7 @@ describe("parseMonologueSection", () => {
         body: "- まず書く\n- あとで読む",
         date: "2026-09-23",
         time: "08:15",
+        hasBodyDifference: false,
         sources: { note: true, google: false },
       },
     ]);

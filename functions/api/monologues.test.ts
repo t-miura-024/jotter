@@ -168,6 +168,7 @@ describe("mergeMonologues", () => {
           body: "- まず書く",
           date: "2026-09-23",
           time: "08:15",
+          hasBodyDifference: false,
           sources: { note: true, google: false },
         },
         {
@@ -175,6 +176,7 @@ describe("mergeMonologues", () => {
           body: "- 本文",
           date: "2026-09-10",
           time: "09:00",
+          hasBodyDifference: false,
           sources: { note: true, google: false },
         },
       ],
@@ -188,17 +190,17 @@ describe("mergeMonologues", () => {
       {
         title: "朝の思いつき",
         body: "- まず書く",
-        gcBody: "  - まず書く\n",
         date: "2026-09-23",
         time: "08:15",
+        hasBodyDifference: false,
         sources: { note: true, google: true },
       },
       {
         title: "GCのみ",
         body: "- カレンダーから",
-        gcBody: "- カレンダーから",
         date: "2026-09-11",
         time: null,
+        hasBodyDifference: false,
         sources: { note: false, google: true },
       },
       {
@@ -206,6 +208,7 @@ describe("mergeMonologues", () => {
         body: "- 本文",
         date: "2026-09-10",
         time: "09:00",
+        hasBodyDifference: false,
         sources: { note: true, google: false },
       },
     ]);
@@ -219,6 +222,7 @@ describe("mergeMonologues", () => {
           body: "- note本文",
           date: "2026-09-23",
           time: "08:15",
+          hasBodyDifference: false,
           sources: { note: true, google: false },
         },
       ],
@@ -232,6 +236,7 @@ describe("mergeMonologues", () => {
       body: "- gc本文",
       date: "2026-09-23",
       time: null,
+      hasBodyDifference: false,
       sources: { note: false, google: true },
     });
   });
@@ -244,6 +249,7 @@ describe("mergeMonologues", () => {
           body: "- 1件目",
           date: "2026-09-23",
           time: "08:15",
+          hasBodyDifference: false,
           sources: { note: true, google: false },
         },
         {
@@ -251,6 +257,7 @@ describe("mergeMonologues", () => {
           body: "- 2件目",
           date: "2026-09-23",
           time: "09:00",
+          hasBodyDifference: false,
           sources: { note: true, google: false },
         },
       ],
@@ -260,12 +267,12 @@ describe("mergeMonologues", () => {
     const matched = merged.filter((entry) => entry.sources.google);
     const unmatched = merged.filter((entry) => !entry.sources.google);
     expect(matched).toHaveLength(1);
-    expect(matched[0].gcBody).toBe("- 1件目");
-    // note 本文は優先され、GC 本文は gcBody に残る
+    expect(matched[0].hasBodyDifference).toBe(false);
+    // note 本文は優先される
     expect(matched[0].body).toMatch(/^- \d件目$/);
     expect(unmatched).toHaveLength(1);
     expect(unmatched[0].sources).toEqual({ note: true, google: false });
-    expect(unmatched[0].gcBody).toBeUndefined();
+    expect(unmatched[0].hasBodyDifference).toBe(false);
   });
 
   it("同日同名同本文の重複は潰さず1:1消費する（note単数＋GC複数）", () => {
@@ -276,6 +283,7 @@ describe("mergeMonologues", () => {
           body: "- note本文",
           date: "2026-09-23",
           time: "08:15",
+          hasBodyDifference: false,
           sources: { note: true, google: false },
         },
       ],
@@ -290,15 +298,35 @@ describe("mergeMonologues", () => {
     expect(matched).toHaveLength(1);
     expect(matched[0].sources).toEqual({ note: true, google: true });
     expect(matched[0].body).toBe("- note本文");
-    expect(matched[0].gcBody).toBe("- note本文");
+    expect(matched[0].hasBodyDifference).toBe(false);
     expect(googleOnly).toHaveLength(1);
     expect(googleOnly[0]).toMatchObject({
       body: "- gc2",
-      gcBody: "- gc2",
       date: "2026-09-23",
       time: null,
+      hasBodyDifference: false,
       sources: { note: false, google: true },
     });
+  });
+
+  it("正規化一致でも表記差があればhasBodyDifferenceを立てる（空行差）", () => {
+    const merged = mergeMonologues(
+      [
+        {
+          title: "同じ",
+          body: "- a\n- b",
+          date: "2026-09-23",
+          time: "08:15",
+          hasBodyDifference: false,
+          sources: { note: true, google: false },
+        },
+      ],
+      [{ date: "2026-09-23", title: "同じ", body: "- a\n\n- b" }],
+    );
+    expect(merged).toHaveLength(1);
+    expect(merged[0].sources).toEqual({ note: true, google: true });
+    expect(merged[0].body).toBe("- a\n- b");
+    expect(merged[0].hasBodyDifference).toBe(true);
   });
 
   it("GCのみは時刻なし（null）で同日最下位にソートする", () => {
@@ -309,6 +337,7 @@ describe("mergeMonologues", () => {
           body: "- 本文",
           date: "2026-09-23",
           time: "08:15",
+          hasBodyDifference: false,
           sources: { note: true, google: false },
         },
       ],
@@ -382,7 +411,7 @@ describe("GET /api/monologues — 一覧マージ", () => {
       monologues: Array<{
         title: string;
         body: string;
-        gcBody?: string;
+        hasBodyDifference: boolean;
         date: string;
         time: string | null;
         sources: { note: boolean; google: boolean };
@@ -397,22 +426,23 @@ describe("GET /api/monologues — 一覧マージ", () => {
         body: "- ふりかえり",
         date: "2026-09-23",
         time: "21:00",
+        hasBodyDifference: false,
         sources: { note: true, google: false },
       },
       {
         title: "朝の思いつき",
         body: "- まず書く",
-        gcBody: "- まず書く",
         date: "2026-09-23",
         time: "08:15",
+        hasBodyDifference: false,
         sources: { note: true, google: true },
       },
       {
         title: "GCのみ",
         body: "- カレンダーから",
-        gcBody: "- カレンダーから",
         date: "2026-09-10",
         time: null,
+        hasBodyDifference: false,
         sources: { note: false, google: true },
       },
     ]);

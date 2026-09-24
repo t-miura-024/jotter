@@ -1,4 +1,5 @@
 import type { Monologue } from "../../shared/monologue";
+import { MarkdownBody } from "@/components/markdown-body";
 import { cn } from "@/lib/utils";
 
 function SourceBadge({ label, present }: { label: string; present: boolean }) {
@@ -18,35 +19,33 @@ function SourceBadge({ label, present }: { label: string; present: boolean }) {
 }
 
 /**
- * Monologue のカード表示（日付＋タイトル＋本文＋note/GCバッジ全出し）。
+ * Monologue のカード表示（日付＋バッジ行＋タイトル＋本文＋差分注記の全出し）。
+ * タイトル・本文は Markdown 表示し、タイトルは折り返しで省略しない。
  * 詳細モーダルは持たない（shared/monologue.ts の Monologue 定義と対応）。
  */
 export function MonologueCard({ monologue }: { monologue: Monologue }) {
-  const gcBodyMismatch =
-    monologue.sources.google &&
-    monologue.gcBody !== undefined &&
-    monologue.gcBody.trim().length > 0 &&
-    monologue.gcBody.trim() !== monologue.body.trim();
   return (
     <article className="flex flex-col gap-1.5 px-3 py-2.5">
       <div className="flex items-center gap-2">
         <span className="shrink-0 font-mono text-xs text-muted-foreground tabular-nums">
           {monologue.date} {monologue.time ?? "--:--"}
         </span>
-        <h3 className="min-w-0 flex-1 truncate text-sm font-medium">{monologue.title}</h3>
+        <span className="min-w-0 flex-1" />
         <SourceBadge label="note" present={monologue.sources.note} />
         <SourceBadge label="GC" present={monologue.sources.google} />
       </div>
-      {monologue.body.trim().length > 0 && (
-        <p className="text-sm break-words whitespace-pre-wrap text-muted-foreground">
-          {monologue.body}
-        </p>
+      {monologue.title.trim().length > 0 && (
+        <div className="text-sm font-medium break-words">
+          <MarkdownBody markdown={monologue.title} />
+        </div>
       )}
-      {gcBodyMismatch && (
-        <p className="text-xs break-words whitespace-pre-wrap text-muted-foreground/80">
-          <span className="font-mono">[GC] </span>
-          {monologue.gcBody}
-        </p>
+      {monologue.body.trim().length > 0 && (
+        <div className="break-words">
+          <MarkdownBody markdown={monologue.body} />
+        </div>
+      )}
+      {monologue.hasBodyDifference && (
+        <p className="text-xs text-muted-foreground">本文に差分があります・noteを採用しています</p>
       )}
     </article>
   );

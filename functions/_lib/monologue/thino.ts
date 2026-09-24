@@ -39,6 +39,7 @@ function toMonologue(
     body: bullets.map((bullet) => `- ${bullet}`.trimEnd()).join("\n"),
     date,
     time,
+    hasBodyDifference: false,
     sources: { note: true, google: false },
   };
 }

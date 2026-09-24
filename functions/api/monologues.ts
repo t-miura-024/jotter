@@ -73,7 +73,7 @@ export function datesInMonth(month: string): string[] {
  * submit 側の冪等判定（isDuplicateCalendarEntry / hasDuplicateMonologueEntry）と同一基準にし、
  * 同日同名でも本文が違えば別物として両方残す（body 違いの誤突合を防ぐ）。
  * 一致すれば両方の sources を立て、片方のみも許容する（note の本文・時刻を優先し、
- * GC 本文は gcBody に保持して破棄しない）。
+ * GC原文は破棄して差分有無のみ hasBodyDifference に保持する）。
  * 同キー重複は潰さない。突合は消費済みを除外する 1:1 消費方式とし、
  * note 側 N 件・GC 側 M 件の同キーは min(N, M) 件だけ突合し、残りは両方残す。
  * 新しい順（date 降順→time 降順。時刻なしは同日最下位）で返す。
@@ -84,6 +84,7 @@ export function mergeMonologues(
 ): Monologue[] {
   const merged: Monologue[] = noteEntries.map((entry) => ({
     ...entry,
+    hasBodyDifference: false,
     sources: { note: true, google: false },
   }));
   const consumed = new Set<number>();
@@ -99,12 +100,13 @@ export function mergeMonologues(
     if (index >= 0) {
       consumed.add(index);
       merged[index].sources.google = true;
-      merged[index].gcBody = gc.body;
+      merged[index].hasBodyDifference =
+        gc.body.trim().length > 0 && gc.body.trim() !== merged[index].body.trim();
     } else {
       merged.push({
         title: gc.title.trim(),
         body: gc.body,
-        gcBody: gc.body,
+        hasBodyDifference: false,
         date: gc.date,
         time: GOOGLE_ONLY_TIME,
         sources: { note: false, google: true },

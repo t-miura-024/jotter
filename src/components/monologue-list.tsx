@@ -38,10 +38,11 @@ export function MonologueListSkeleton() {
             <li key={row} className="flex flex-col gap-1.5 px-3 py-2.5">
               <div className="flex items-center gap-2">
                 <Skeleton className="h-3 w-24 shrink-0" />
-                <Skeleton className="h-4 flex-1" />
+                <span className="min-w-0 flex-1" />
                 <Skeleton className="h-4 w-8 shrink-0 rounded-full" />
                 <Skeleton className="h-4 w-8 shrink-0 rounded-full" />
               </div>
+              <Skeleton className="h-4 w-3/4" />
               <Skeleton
                 className="h-3"
                 style={{ width: row === 0 ? "72%" : row === 1 ? "55%" : "64%" }}
