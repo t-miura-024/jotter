@@ -104,6 +104,53 @@ const contentsOk = (content: string, sha: string): Response => {
   return jsonResponse({ sha, content: btoa(binary), encoding: "base64" });
 };
 
+type SubmitBackendOptions = {
+  geminiTitle?: string;
+  geminiBody?: string;
+  /** 未指定なら note ファイル不存在（404）として振る舞う。 */
+  noteContent?: string;
+  noteSha?: string;
+  calendarItems?: unknown[];
+  eventId?: string;
+};
+
+/**
+ * URL ルーティングで応答を振り分ける fetch モック（呼び出し順序に依存しない）。
+ * mockResolvedValueOnce 連鎖と違い、余分・順序違いの fetch があっても黙ってズレない。
+ * 未知の URL は throw して大きな音を立てる。
+ */
+function mockSubmitBackend(
+  fetchMock: ReturnType<typeof vi.fn>,
+  options: SubmitBackendOptions = {},
+) {
+  const {
+    geminiTitle = "タイトル",
+    geminiBody = "- 本文",
+    noteContent,
+    noteSha = "sha-1",
+    calendarItems = [],
+    eventId = "event-1",
+  } = options;
+  fetchMock.mockImplementation(async (input, init) => {
+    const url = String(input);
+    const method = init?.method ?? "GET";
+    if (url.includes("generativelanguage.googleapis.com")) {
+      return geminiOk(geminiTitle, geminiBody);
+    }
+    if (url.includes("api.github.com")) {
+      if (method === "PUT") return putOk();
+      if (noteContent === undefined) return notFound();
+      return contentsOk(noteContent, noteSha);
+    }
+    if (url.includes("oauth2.googleapis.com")) return tokenOk();
+    if (url.includes("www.googleapis.com")) {
+      if (method === "POST") return calendarOk(eventId);
+      return jsonResponse({ items: calendarItems });
+    }
+    throw new Error(`unexpected fetch: ${url}`);
+  });
+}
+
 beforeAll(async () => {
   privatePem = await generatePrivatePem();
   ENV = {
@@ -707,9 +754,7 @@ describe("POST /api/monologue/submit — 失敗側専用リトライ", () => {
 
   it("gc リトライは note を再実行せず creating-event → done を返す", async () => {
     const fetchMock = vi.fn<typeof fetch>();
-    fetchMock.mockResolvedValueOnce(tokenOk());
-    fetchMock.mockResolvedValueOnce(jsonResponse({ items: [] }));
-    fetchMock.mockResolvedValueOnce(calendarOk("event-9"));
+    mockSubmitBackend(fetchMock, { calendarItems: [], eventId: "event-9" });
     vi.stubGlobal("fetch", fetchMock);
 
     const response = await onRequestPost(context(retryGcBody(), ENV));
@@ -720,7 +765,7 @@ describe("POST /api/monologue/submit — 失敗側専用リトライ", () => {
     expect(done.noteOk).toBe(false);
     expect(done.noteSkipped).toBe(true);
     expect(done.noteError).toBe("未実行（失敗側のみ再送のため）");
-    expect(done.gcOk).toBe(true);
+    expect(done.gcOk, JSON.stringify(done)).toBe(true);
     expect(done).not.toHaveProperty("eventId");
     // note（GitHub API）へは一切触れない＝成功側の重複が起きない
     expect(
@@ -730,19 +775,18 @@ describe("POST /api/monologue/submit — 失敗側専用リトライ", () => {
 
   it("gc リトライの再送（同日＋正規化タイトル一致）は予定を再作成しない", async () => {
     const fetchMock = vi.fn<typeof fetch>();
-    fetchMock.mockResolvedValueOnce(tokenOk());
-    fetchMock.mockResolvedValueOnce(
-      jsonResponse({
-        items: [{ start: { date: retryDate() }, summary: "　タイトル　", description: "- 本文" }],
-      }),
-    );
+    mockSubmitBackend(fetchMock, {
+      calendarItems: [
+        { start: { date: retryDate() }, summary: "　タイトル　", description: "- 本文" },
+      ],
+    });
     vi.stubGlobal("fetch", fetchMock);
 
     const response = await onRequestPost(context(retryGcBody(), ENV));
 
     const events = await parseSseEvents(response);
     expect(events.map((e) => e.event)).toEqual(["creating-event", "done"]);
-    expect(events[1].data.gcOk).toBe(true);
+    expect(events[1].data.gcOk, JSON.stringify(events[1].data)).toBe(true);
     expect(events[1].data.noteOk).toBe(false);
     expect(events[1].data.noteSkipped).toBe(true);
     expect(events[1].data).not.toHaveProperty("eventId");
@@ -759,11 +803,12 @@ describe("POST /api/monologue/submit — 失敗側専用リトライ", () => {
   it("通常経路の jot 再送（同内容・時刻違い）は note へ二重追記しない", async () => {
     const existing = ["# 💬 Monologue", "- 08:00", "    ### タイトル", "    - 本文", ""].join("\n");
     const fetchMock = vi.fn<typeof fetch>();
-    fetchMock.mockResolvedValueOnce(geminiOk("タイトル", "- 本文"));
-    fetchMock.mockResolvedValueOnce(contentsOk(existing, "sha-1"));
-    fetchMock.mockResolvedValueOnce(tokenOk());
-    fetchMock.mockResolvedValueOnce(jsonResponse({ items: [] }));
-    fetchMock.mockResolvedValueOnce(calendarOk());
+    mockSubmitBackend(fetchMock, {
+      geminiTitle: "タイトル",
+      geminiBody: "- 本文",
+      noteContent: existing,
+      calendarItems: [],
+    });
     vi.stubGlobal("fetch", fetchMock);
 
     const response = await onRequestPost(context('{"jot":"走り書き"}', ENV));
@@ -776,8 +821,8 @@ describe("POST /api/monologue/submit — 失敗側専用リトライ", () => {
       "done",
     ]);
     const done = events[3].data;
-    expect(done.noteOk).toBe(true);
-    expect(done.gcOk).toBe(true);
+    expect(done.noteOk, JSON.stringify(done)).toBe(true);
+    expect(done.gcOk, JSON.stringify(done)).toBe(true);
     // note 追記 PUT は呼ばれない
     expect(
       fetchMock.mock.calls.filter(([, init]) => (init as RequestInit)?.method === "PUT"),
@@ -786,20 +831,19 @@ describe("POST /api/monologue/submit — 失敗側専用リトライ", () => {
 
   it("gc リトライで同タイトルでも本文が違えば再作成する（body を含めて冪等判定）", async () => {
     const fetchMock = vi.fn<typeof fetch>();
-    fetchMock.mockResolvedValueOnce(tokenOk());
-    fetchMock.mockResolvedValueOnce(
-      jsonResponse({
-        items: [{ start: { date: retryDate() }, summary: "タイトル", description: "- 別の本文" }],
-      }),
-    );
-    fetchMock.mockResolvedValueOnce(calendarOk("event-10"));
+    mockSubmitBackend(fetchMock, {
+      calendarItems: [
+        { start: { date: retryDate() }, summary: "タイトル", description: "- 別の本文" },
+      ],
+      eventId: "event-10",
+    });
     vi.stubGlobal("fetch", fetchMock);
 
     const response = await onRequestPost(context(retryGcBody(), ENV));
 
     const events = await parseSseEvents(response);
     expect(events.map((e) => e.event)).toEqual(["creating-event", "done"]);
-    expect(events[1].data.gcOk).toBe(true);
+    expect(events[1].data.gcOk, JSON.stringify(events[1].data)).toBe(true);
     expect(events[1].data.noteOk).toBe(false);
     expect(events[1].data).not.toHaveProperty("eventId");
     expect(
@@ -812,18 +856,17 @@ describe("POST /api/monologue/submit — 失敗側専用リトライ", () => {
 
   it("gc リトライで本文の体裁揺れ（空白・空行）は重複と判定し再作成しない", async () => {
     const fetchMock = vi.fn<typeof fetch>();
-    fetchMock.mockResolvedValueOnce(tokenOk());
-    fetchMock.mockResolvedValueOnce(
-      jsonResponse({
-        items: [{ start: { date: retryDate() }, summary: "タイトル", description: "  - 本文\n\n" }],
-      }),
-    );
+    mockSubmitBackend(fetchMock, {
+      calendarItems: [
+        { start: { date: retryDate() }, summary: "タイトル", description: "  - 本文\n\n" },
+      ],
+    });
     vi.stubGlobal("fetch", fetchMock);
 
     const response = await onRequestPost(context(retryGcBody(), ENV));
 
     const events = await parseSseEvents(response);
-    expect(events[1].data.gcOk).toBe(true);
+    expect(events[1].data.gcOk, JSON.stringify(events[1].data)).toBe(true);
     expect(events[1].data.noteOk).toBe(false);
     expect(events[1].data).not.toHaveProperty("eventId");
     expect(
@@ -840,14 +883,12 @@ describe("POST /api/monologue/submit — 失敗側専用リトライ", () => {
       "\n",
     );
     const fetchMock = vi.fn<typeof fetch>();
-    fetchMock.mockResolvedValueOnce(geminiOk("タイトル", "- 本文"));
-    fetchMock.mockResolvedValueOnce(contentsOk(noteMarkdown, "sha-1"));
-    fetchMock.mockResolvedValueOnce(tokenOk());
-    fetchMock.mockResolvedValueOnce(
-      jsonResponse({
-        items: [{ start: { date: today }, summary: "タイトル", description: "- 本文" }],
-      }),
-    );
+    mockSubmitBackend(fetchMock, {
+      geminiTitle: "タイトル",
+      geminiBody: "- 本文",
+      noteContent: noteMarkdown,
+      calendarItems: [{ start: { date: today }, summary: "タイトル", description: "- 本文" }],
+    });
     vi.stubGlobal("fetch", fetchMock);
 
     const response = await onRequestPost(context('{"jot":"走り書き"}', ENV));
@@ -860,8 +901,8 @@ describe("POST /api/monologue/submit — 失敗側専用リトライ", () => {
       "done",
     ]);
     const done = events[3].data;
-    expect(done.noteOk).toBe(true);
-    expect(done.gcOk).toBe(true);
+    expect(done.noteOk, JSON.stringify(done)).toBe(true);
+    expect(done.gcOk, JSON.stringify(done)).toBe(true);
     expect(done).not.toHaveProperty("eventId");
     // GC 予定作成 POST は増えない（一覧 GET のみ）
     expect(
