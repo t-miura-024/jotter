@@ -1,9 +1,10 @@
-import { Menu, PenLine, RefreshCw, X } from "lucide-react";
+import { ClipboardList, Menu, MessageCircle, PenLine, RefreshCw, X } from "lucide-react";
 
 import { PLAN_GROUP_ORDER, PLAN_STATUS_META } from "@/lib/plan-status";
 import type { RepoStatsEntry } from "@/lib/repo-stats";
 import { NOTE_INBOX } from "@/lib/target";
 import { displayRepoName, orderReposForNav, type RepoNavEntry } from "@/lib/repo-selection";
+import type { ViewSelection } from "@/lib/view-selection";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
@@ -34,6 +35,10 @@ export type RepoNavProps = {
   onSelect: (fullName: string) => void;
   /** stats だけを再取得する導線（sidebar のリトライボタン）。 */
   onRetryStats: () => void;
+  /** 現在の表示（未指定は plan 扱い。既存呼び出しの互換用）。 */
+  activeView?: ViewSelection;
+  /** Plan / Monologue 切替の変更通知（未指定ならトグルを表示しない）。 */
+  onViewChange?: (view: ViewSelection) => void;
 };
 
 /** 1 件分の件数表示。0 件は薄くして判別できるようにする（選択・絞り込み操作は持たない）。 */
@@ -75,6 +80,66 @@ export function BrandHeader() {
   );
 }
 
+/** Plan / Monologue の切替トグル（PC sidebar フッター用）。 */
+export function ViewToggle({
+  value,
+  onChange,
+}: {
+  value: ViewSelection;
+  onChange: (view: ViewSelection) => void;
+}) {
+  return (
+    <div
+      role="group"
+      aria-label="表示切替"
+      className="flex gap-1 rounded-lg border bg-background p-1"
+    >
+      <ViewToggleButton
+        active={value === "plan"}
+        onClick={() => onChange("plan")}
+        icon={<ClipboardList aria-hidden className="size-3.5 shrink-0" />}
+        label="Plan"
+      />
+      <ViewToggleButton
+        active={value === "monologue"}
+        onClick={() => onChange("monologue")}
+        icon={<MessageCircle aria-hidden className="size-3.5 shrink-0" />}
+        label="Monologue"
+      />
+    </div>
+  );
+}
+
+function ViewToggleButton({
+  active,
+  onClick,
+  icon,
+  label,
+}: {
+  active: boolean;
+  onClick: () => void;
+  icon: React.ReactNode;
+  label: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-current={active ? "true" : undefined}
+      className={cn(
+        "flex min-w-0 flex-1 items-center justify-center gap-1 rounded-md px-2 py-1.5 text-xs font-medium transition-colors",
+        active ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-accent/60",
+      )}
+    >
+      {icon}
+      <span className="truncate">{label}</span>
+    </button>
+  );
+}
+
+/** RepoNavContent が受け取る props。切替 UI は Sidebar の ViewToggle に集約するため onViewChange は持たない。 */
+type RepoNavContentProps = Omit<RepoNavProps, "onViewChange">;
+
 function RepoNavContent({
   repos,
   stats,
@@ -83,12 +148,23 @@ function RepoNavContent({
   selected,
   onSelect,
   onRetryStats,
-}: RepoNavProps) {
+  activeView = "plan",
+}: RepoNavContentProps) {
   const ordered = orderReposForNav(repos);
   const statsFailed = stats === null && !statsLoading;
 
   if (reposLoading) {
     return <RepoNavSkeleton />;
+  }
+
+  // Monologue 表示中は repo 選択を隠し、切替中であることだけを示す。
+  // Monologue の出力先は note＋GC 固定のため repo 選択は不要。
+  if (activeView === "monologue") {
+    return (
+      <p className="rounded-lg border border-dashed px-3 py-2.5 text-xs text-muted-foreground">
+        Monologue 表示中はリポジトリ選択は不要です
+      </p>
+    );
   }
 
   return (
@@ -148,7 +224,12 @@ function RepoNavContent({
 }
 
 /** PC の固定左 sidebar（モバイルでは非表示）。カードではなく画面端から伸びるペーンとして表示し、独立スクロールする。 */
-export function RepoSidebar({ className, ...props }: RepoNavProps & { className?: string }) {
+export function RepoSidebar({
+  className,
+  activeView = "plan",
+  onViewChange,
+  ...props
+}: RepoNavProps & { className?: string }) {
   return (
     <aside
       className={cn(
@@ -156,9 +237,14 @@ export function RepoSidebar({ className, ...props }: RepoNavProps & { className?
         className,
       )}
     >
-      <div className="flex flex-col gap-4 p-3">
+      <div className="flex min-h-full flex-col gap-4 p-3">
         <BrandHeader />
-        <RepoNavContent {...props} />
+        <RepoNavContent activeView={activeView} {...props} />
+        {onViewChange && (
+          <div className="mt-auto pt-2">
+            <ViewToggle value={activeView} onChange={onViewChange} />
+          </div>
+        )}
       </div>
     </aside>
   );
@@ -218,6 +304,9 @@ export function RepoDrawer({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  // onViewChange は Sidebar の ViewToggle に集約し、RepoNavContent には渡さない。
+  const { onViewChange: _onViewChange, ...contentProps } = navProps;
+  void _onViewChange;
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
@@ -237,7 +326,7 @@ export function RepoDrawer({
         </div>
         <div className="w-full">
           <RepoNavContent
-            {...navProps}
+            {...contentProps}
             onSelect={(fullName) => {
               onSelect(fullName);
               onOpenChange(false);

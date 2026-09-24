@@ -14,4 +14,11 @@ export type Env = {
   STATUS_FIELD_ID?: string;
   /** Status フィールドの `draft` オプションの node ID。 */
   STATUS_OPTION_ID?: string;
+  /**
+   * Google Service Account の秘密鍵 JSON（Monologue の GC 連携用）。
+   * Cloudflare secret / .dev.vars で設定。ブラウザには一切出さない。
+   */
+  GOOGLE_SERVICE_ACCOUNT_JSON?: string;
+  /** Monologue 専用カレンダーの ID（ADR 0013）。 */
+  MONOLOGUE_CALENDAR_ID?: string;
 };

@@ -7,6 +7,8 @@
 export type RepoStatsCache = {
   match(url: string): Promise<Response | undefined>;
   put(url: string, response: Response): Promise<void>;
+  /** キャッシュ破棄。submit 成功時の同一月 purge 用。未対応のフェイクでは省略可。 */
+  delete?(url: string): Promise<boolean>;
 };
 
 /** 実行環境の Cache API を返す。利用できない環境では undefined。 */

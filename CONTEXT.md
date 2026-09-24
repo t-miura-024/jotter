@@ -35,3 +35,19 @@ _Avoid_: repo selector, dropdown
 **unregistered**:
 `kind/plan` label を持ち open だが、GitHub Project に登録されていない計画 Issue のグループ。起票時の Project 連携は best-effort のため存在しうる。
 _Avoid_: unknown, others
+
+**Plan**:
+実現したいことを AI 整形して draft Issue として起票する既存機能・概念。画面文言・コード・用語集でこの呼称に統一する。
+_Avoid_: draft, issue作成
+
+**Monologue**:
+残したい日々の断片（日常のアイデア・メモ）を AI 整形して出力する新機能・概念。出力はタイトル＋箇条書き本文、出力先は note デイリーノート＋Google カレンダー終日予定。使い分けは書き手の意図基準。
+_Avoid_: memo, 日記, log
+
+**monologue card**:
+Monologue専用一覧の表示単位。日付＋タイトル＋本文＋note/GCバッジを全出しする。詳細モーダルは持たない。
+_Avoid_: plan card, detail dialog
+
+**note badge / GC badge**:
+monologue card ごとに出典（note main存在・Google Calendar存在）を示す表示要素。片方のみ存在も許容表示する。
+_Avoid_: source icon
